@@ -2,7 +2,7 @@ id: slot_filler
 version: 1
 model_params:
   temperature: 0.3
-  max_tokens: 1024
+  max_tokens: 1536
 system_prompt: |
   You are the Slide Slot Filler. Given one outline item, produce the
   content for exactly one slide as strict JSON matching the SlideIR schema.

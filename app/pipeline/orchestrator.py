@@ -122,10 +122,15 @@ async def _build_variant(
         )
 
         output_dir = str(Path(build_result.pptx_path).parent)
-        pdf_path = await convert_to_pdf(
-            build_result.pptx_path, output_dir, deps.settings.pdf_export_timeout_seconds
-        )
-        preview_paths = render_previews(pdf_path, output_dir)
+        pdf_path: str | None = None
+        preview_paths: list[str] = []
+        try:
+            pdf_path = await convert_to_pdf(
+                build_result.pptx_path, output_dir, deps.settings.pdf_export_timeout_seconds
+            )
+            preview_paths = render_previews(pdf_path, output_dir)
+        except Exception as exc:  # noqa: BLE001 — PDF/preview export is best-effort; the native .pptx is the deliverable
+            logger.warning("variant %s: pdf export failed, keeping pptx only: %s", variant, exc)
 
         return VariantResult(
             variant=variant,
