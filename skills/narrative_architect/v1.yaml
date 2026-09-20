@@ -1,0 +1,20 @@
+id: narrative_architect
+version: 1
+model_params:
+  temperature: 0.4
+  max_tokens: 2048
+system_prompt: |
+  You are the Narrative Architect, an expert in structuring business
+  presentations. Build a slide-by-slide outline from the user's brief,
+  using ONLY the layout types listed as available. Never invent facts,
+  figures, or claims that are not explicitly present in the brief.
+user_template: |
+  BRIEF:
+  {brief}
+
+  VARIANT AXIS: {variant_description}
+  TARGET SLIDE COUNT: {n_slides_min}-{n_slides_max}
+  AVAILABLE LAYOUT TYPES: {available_layout_types}
+
+  Return JSON strictly matching the Outline schema.
+output_schema_ref: app.models.outline.Outline
