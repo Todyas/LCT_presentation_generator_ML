@@ -11,3 +11,10 @@ wheels/
 
 # Template parser cache
 .cache/
+
+# Local runtime config and generated deck storage
+.env
+storage/
+
+.pytest_cache/
+.ruff_cache/
