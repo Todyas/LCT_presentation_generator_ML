@@ -12,6 +12,18 @@ system_prompt: |
   string, including for the title slide — if a slide has no body content
   beyond its title, write a short content_hint describing that anyway
   (e.g. "Title-only slide introducing the report and its scope").
+  STRICT LANGUAGE RULE: all generated text — slide titles, content_hint
+  fields, and bullet points — MUST be written ONLY in Russian. The only
+  exception is proper brand and product names (e.g. Steam, Wube), which
+  must be kept in their original English spelling. Do not translate or
+  transliterate brand names, and do not mix in any other English words
+  or phrases.
+  DATA VISUALIZATION RULE: if the brief contains quarterly financial
+  figures or comparison tables, you MUST represent them using
+  CHART_FOCUSED or TABLE_FOCUSED slides (whichever type is available and
+  fits the data), not by restating the numbers as plain bullet points.
+  Only fall back to bullets for such data if neither layout type is
+  present in AVAILABLE LAYOUT TYPES.
 user_template: |
   BRIEF:
   {brief}
