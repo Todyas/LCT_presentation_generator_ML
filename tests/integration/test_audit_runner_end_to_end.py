@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
+from pptx import Presentation
 
 from app.core.agents.prompt_registry import PromptRegistry
 from app.core.auditor.audit_runner import run_full_audit
@@ -88,16 +89,22 @@ async def test_dirty_deck_flags_multiple_issue_types(tmp_path):
     manifest = TemplateParser().parse(template_path)
 
     layout = manifest.find_layout(LayoutType.CONTENT_2COL)
-    body_slots = [s for s in layout.slots if s.placeholder_type == PlaceholderType.BODY]
-    shared_geometry = body_slots[0].geometry
-    new_slots = [
-        s.model_copy(update={"geometry": shared_geometry})
-        if s.placeholder_type == PlaceholderType.BODY
-        else s
-        for s in layout.slots
-    ]
-    layout_index = manifest.layouts.index(layout)
-    manifest.layouts[layout_index] = layout.model_copy(update={"slots": new_slots})
+    body_idxs = [s.placeholder_idx for s in layout.slots if s.placeholder_type == PlaceholderType.BODY]
+    assert len(body_idxs) >= 2
+
+    # the builder now reports each populated placeholder's own real, inherited geometry
+    # (Bug 1 fix) rather than trusting the parsed manifest, so a genuine collision must be
+    # forced onto the actual layout XML, not just the in-memory manifest, to still trip it
+    prs = Presentation(template_path)
+    pptx_layout = prs.slide_layouts[layout.layout_index]
+    body_placeholders = [p for p in pptx_layout.placeholders if p.placeholder_format.idx in body_idxs]
+    anchor = body_placeholders[0]
+    for placeholder in body_placeholders[1:]:
+        placeholder.left, placeholder.top = anchor.left, anchor.top
+        placeholder.width, placeholder.height = anchor.width, anchor.height
+    prs.save(template_path)
+
+    manifest = TemplateParser().parse(template_path)
 
     slides = [
         SlideIR(

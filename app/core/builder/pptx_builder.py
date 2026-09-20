@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from itertools import groupby
 from pathlib import Path
 
 from pptx import Presentation
@@ -11,11 +12,11 @@ from pptx.slide import Slide
 from app.core.builder.autofit import apply_autofit_to_text_frame
 from app.core.builder.shape_factory import (
     BBox,
-    render_bullet_block,
-    render_chart,
+    render_bullet_component,
+    render_chart_component,
     render_image_placeholder,
-    render_metric_card,
-    render_table,
+    render_metric_card_group,
+    render_table_component,
 )
 from app.core.parser.font_resolver import resolve_font_path
 from app.core.parser.template_parser import _PLACEHOLDER_TYPE_MAP
@@ -44,7 +45,7 @@ class BuildResult:
 
 SLIDE_MARGIN_EMU = 91_440  # 0.1 inch — spacing between an auto-placed component and its predecessor
 _FALLBACK_HEIGHT_EMU = 1_500_000  # default box height when no matching slot exists, not a slide coordinate
-_FALLBACK_WIDTH_RATIO = 0.8  # fraction of slide width used for the fallback box
+_FALLBACK_WIDTH_RATIO = 0.8  # fraction of slide width used only when a layout has no content slots at all
 
 # invert Sprint 1's PP_PLACEHOLDER -> PlaceholderType map so lookups stay consistent with the parser
 _OUR_TO_PPTX_PLACEHOLDER_TYPES: dict[PlaceholderType, set[int]] = {}
@@ -57,6 +58,23 @@ _COMPONENT_TO_PLACEHOLDER_TYPE: dict[type, PlaceholderType] = {
     ChartData: PlaceholderType.CHART,
     ImagePlaceholder: PlaceholderType.PICTURE,
 }
+
+# footer/date/slide-number chrome usually spans the full canvas width regardless of the
+# layout's real content-safe region, so it must not seed the fallback bounding box (Bug 3)
+_CHROME_PLACEHOLDER_TYPES = frozenset(
+    {PlaceholderType.TITLE, PlaceholderType.FOOTER, PlaceholderType.DATE, PlaceholderType.SLIDE_NUMBER}
+)
+
+
+def _group_components(components: list[SlideComponent]) -> list[list[SlideComponent]]:
+    groups: list[list[SlideComponent]] = []
+    for is_metric, group in groupby(components, key=lambda c: isinstance(c, MetricCard)):
+        chunk = list(group)
+        if is_metric:
+            groups.append(chunk)
+        else:
+            groups.extend([c] for c in chunk)
+    return groups
 
 
 class PptxBuilder:
@@ -74,6 +92,7 @@ class PptxBuilder:
             font_path = resolve_font_path(manifest.fonts.minor_latin)
 
             title_placeholder = self._find_placeholder(slide, PlaceholderType.TITLE)
+            used_placeholder_idxs: set[int] = set()
             if title_placeholder is not None:
                 title_placeholder.text_frame.text = slide_ir.title.text
                 title_slot = layout.slot_by_type(PlaceholderType.TITLE)
@@ -83,6 +102,7 @@ class PptxBuilder:
                     title_placeholder.left, title_placeholder.top,
                     title_placeholder.width, title_placeholder.height,
                 )
+                used_placeholder_idxs.add(title_placeholder.placeholder_format.idx)
 
             cursor_bottom_emu = (
                 title_placeholder.top + title_placeholder.height
@@ -90,18 +110,32 @@ class PptxBuilder:
                 else 0
             )
 
-            used_slot_ids: set[int] = set()
-            for i, component in enumerate(slide_ir.components):
-                geometry, slot_used = self._resolve_geometry(
-                    component, layout, used_slot_ids, prs, cursor_bottom_emu
+            component_index = 0
+            for group in _group_components(slide_ir.components):
+                if isinstance(group[0], MetricCard):
+                    geometry, _, _ = self._resolve_geometry(
+                        slide, group[0], layout, used_placeholder_idxs, prs, cursor_bottom_emu
+                    )
+                    boxes = render_metric_card_group(slide, geometry, group, manifest.colors, font_path)
+                    for bbox in boxes:
+                        shape_boxes[f"component_{component_index}"] = bbox
+                        component_index += 1
+                    cursor_bottom_emu = geometry.top_emu + geometry.height_emu + SLIDE_MARGIN_EMU
+                    continue
+
+                component = group[0]
+                geometry, slot_used, placeholder_shape = self._resolve_geometry(
+                    slide, component, layout, used_placeholder_idxs, prs, cursor_bottom_emu
                 )
                 if slot_used is not None:
-                    used_slot_ids.add(slot_used)
+                    used_placeholder_idxs.add(slot_used)
 
-                bbox = self._render_component(slide, component, geometry, manifest, font_path)
-                shape_boxes[f"component_{i}"] = bbox
+                bbox = self._render_component(slide, component, geometry, placeholder_shape, manifest, font_path)
+                shape_boxes[f"component_{component_index}"] = bbox
+                component_index += 1
                 cursor_bottom_emu = bbox.y + bbox.h + SLIDE_MARGIN_EMU
 
+            self._purge_unused_placeholders(slide, used_placeholder_idxs)
             bbox_map[slide_ir.slide_index] = shape_boxes
 
         output_path = str(Path(template_path).with_name(f"built_{ir.variant}.pptx"))
@@ -123,30 +157,55 @@ class PptxBuilder:
                 return shape
         return None
 
+    def _find_placeholder_by_idx(self, slide: Slide, idx: int) -> BaseShape | None:
+        for shape in slide.placeholders:
+            if shape.placeholder_format.idx == idx:
+                return shape
+        return None
+
+    def _remove_shape(self, shape: BaseShape) -> None:
+        shape.element.getparent().remove(shape.element)
+
+    def _purge_unused_placeholders(self, slide: Slide, used_placeholder_idxs: set[int]) -> None:
+        for shape in list(slide.placeholders):
+            if shape.placeholder_format.idx not in used_placeholder_idxs:
+                self._remove_shape(shape)
+
     def _resolve_geometry(
         self,
+        slide: Slide,
         component: SlideComponent,
         layout: LayoutManifest,
-        used_slot_ids: set[int],
+        used_placeholder_idxs: set[int],
         prs: PptxPresentation,
         cursor_bottom_emu: int,
-    ) -> tuple[Geometry, int | None]:
+    ) -> tuple[Geometry, int | None, BaseShape | None]:
         wanted_type = _COMPONENT_TO_PLACEHOLDER_TYPE.get(type(component))
         if wanted_type is not None:
             for slot in layout.slots:
-                if slot.placeholder_type == wanted_type and slot.placeholder_idx not in used_slot_ids:
-                    return slot.geometry, slot.placeholder_idx
+                if slot.placeholder_type == wanted_type and slot.placeholder_idx not in used_placeholder_idxs:
+                    placeholder_shape = self._find_placeholder_by_idx(slide, slot.placeholder_idx)
+                    return slot.geometry, slot.placeholder_idx, placeholder_shape
 
-        fallback_width = int(prs.slide_width * _FALLBACK_WIDTH_RATIO)
-        fallback_left = int((prs.slide_width - fallback_width) / 2)
-        return (
-            Geometry(
-                left_emu=fallback_left,
-                top_emu=cursor_bottom_emu,
-                width_emu=fallback_width,
-                height_emu=_FALLBACK_HEIGHT_EMU,
-            ),
-            None,
+        return self._compute_fallback_geometry(layout, prs, cursor_bottom_emu), None, None
+
+    def _compute_fallback_geometry(
+        self, layout: LayoutManifest, prs: PptxPresentation, cursor_bottom_emu: int
+    ) -> Geometry:
+        content_slots = [s for s in layout.slots if s.placeholder_type not in _CHROME_PLACEHOLDER_TYPES]
+        if content_slots:
+            left = min(s.geometry.left_emu for s in content_slots)
+            right = max(s.geometry.right_emu for s in content_slots)
+            width = right - left
+        else:
+            width = int(prs.slide_width * _FALLBACK_WIDTH_RATIO)
+            left = int((prs.slide_width - width) / 2)
+
+        return Geometry(
+            left_emu=left,
+            top_emu=cursor_bottom_emu,
+            width_emu=width,
+            height_emu=_FALLBACK_HEIGHT_EMU,
         )
 
     def _render_component(
@@ -154,22 +213,21 @@ class PptxBuilder:
         slide: Slide,
         component: SlideComponent,
         geometry: Geometry,
+        placeholder_shape: BaseShape | None,
         manifest: TemplateManifest,
         font_path: str,
     ) -> BBox:
         if isinstance(component, BulletBlock):
-            textbox = slide.shapes.add_textbox(
-                geometry.left_emu, geometry.top_emu, geometry.width_emu, geometry.height_emu
+            return render_bullet_component(
+                slide, geometry, placeholder_shape, component, font_path, manifest.fonts.minor_latin
             )
-            render_bullet_block(textbox.text_frame, component, font_path, manifest.fonts.minor_latin)
-            apply_autofit_to_text_frame(textbox.text_frame, geometry, font_path)
-            return BBox(geometry.left_emu, geometry.top_emu, geometry.width_emu, geometry.height_emu)
-        if isinstance(component, MetricCard):
-            return render_metric_card(slide, geometry, component, manifest.colors)
         if isinstance(component, TableData):
-            return render_table(slide, geometry, component)
+            return render_table_component(slide, geometry, placeholder_shape, component)
         if isinstance(component, ChartData):
-            return render_chart(slide, geometry, component)
+            return render_chart_component(slide, geometry, placeholder_shape, component)
         if isinstance(component, ImagePlaceholder):
-            return render_image_placeholder(slide, geometry, component.alt_text, manifest.colors)
+            bbox = render_image_placeholder(slide, geometry, component.alt_text, manifest.colors)
+            if placeholder_shape is not None:
+                self._remove_shape(placeholder_shape)
+            return bbox
         raise TypeError(f"unhandled component type: {type(component)!r}")
