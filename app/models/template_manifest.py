@@ -112,10 +112,28 @@ class TemplateManifest(BaseModel):
     def find_layout(self, layout_type: LayoutType) -> LayoutManifest | None:
         return next((l for l in self.layouts if l.layout_type == layout_type), None)
 
-    def find_layout_or_fallback(self, layout_type: LayoutType) -> LayoutManifest:
+    def find_layout_or_fallback(self, layout_type: LayoutType, slide_index: int = 0) -> LayoutManifest:
+        if slide_index == 0:
+            found = self.find_layout(layout_type)
+            if found is not None:
+                return found
+            for l in self.layouts:
+                if l.slot_by_type(PlaceholderType.BODY) is not None:
+                    return l
+            return self.layouts[0]
+
+        # a TITLE_SLIDE layout is usually a branded cover with a large decorative
+        # graphic (see layout_classifier.py) that only makes sense on slide 0 — every
+        # other slide must land on a content layout even if one was explicitly requested
         found = self.find_layout(layout_type)
-        if found is not None:
+        if found is not None and found.layout_type != LayoutType.TITLE_SLIDE:
             return found
+        for l in self.layouts:
+            if l.layout_type != LayoutType.TITLE_SLIDE and l.slot_by_type(PlaceholderType.BODY) is not None:
+                return l
+        for l in self.layouts:
+            if l.layout_type != LayoutType.TITLE_SLIDE:
+                return l
         for l in self.layouts:
             if l.slot_by_type(PlaceholderType.BODY) is not None:
                 return l

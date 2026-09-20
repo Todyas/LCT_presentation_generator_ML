@@ -76,43 +76,49 @@ class TemplateParser:
         fonts = FontScheme(major_latin=major_latin, minor_latin=minor_latin)
 
         layouts: list[LayoutManifest] = []
-        for layout_index, layout in enumerate(prs.slide_layouts):
-            slots: list[LayoutSlot] = []
-            for placeholder in layout.placeholders:
-                # layout-inherited geometry (left/top/width/height=None) isn't resolved by
-                # python-pptx off the master; resolving it is out of scope for Sprint 1.
-                if None in (placeholder.left, placeholder.top, placeholder.width, placeholder.height):
-                    continue
-                geometry = Geometry(
-                    left_emu=placeholder.left,
-                    top_emu=placeholder.top,
-                    width_emu=placeholder.width,
-                    height_emu=placeholder.height,
-                )
-                normalized = NormalizedGeometry(
-                    x=placeholder.left / prs.slide_width,
-                    y=placeholder.top / prs.slide_height,
-                    w=placeholder.width / prs.slide_width,
-                    h=placeholder.height / prs.slide_height,
-                )
-                slots.append(
-                    LayoutSlot(
-                        placeholder_idx=placeholder.placeholder_format.idx,
-                        placeholder_type=_map_placeholder_type(placeholder.placeholder_format.type),
-                        geometry=geometry,
-                        normalized=normalized,
-                        name=placeholder.name,
+        layout_index = 0
+        # prs.slide_layouts only exposes the first slide master's layouts; a corporate
+        # template's real content layouts often live on additional masters, so every
+        # master must be walked or the manifest silently only sees a handful of title slides
+        for master in prs.slide_masters:
+            for layout in master.slide_layouts:
+                slots: list[LayoutSlot] = []
+                for placeholder in layout.placeholders:
+                    # layout-inherited geometry (left/top/width/height=None) isn't resolved by
+                    # python-pptx off the master; resolving it is out of scope for Sprint 1.
+                    if None in (placeholder.left, placeholder.top, placeholder.width, placeholder.height):
+                        continue
+                    geometry = Geometry(
+                        left_emu=placeholder.left,
+                        top_emu=placeholder.top,
+                        width_emu=placeholder.width,
+                        height_emu=placeholder.height,
+                    )
+                    normalized = NormalizedGeometry(
+                        x=placeholder.left / prs.slide_width,
+                        y=placeholder.top / prs.slide_height,
+                        w=placeholder.width / prs.slide_width,
+                        h=placeholder.height / prs.slide_height,
+                    )
+                    slots.append(
+                        LayoutSlot(
+                            placeholder_idx=placeholder.placeholder_format.idx,
+                            placeholder_type=_map_placeholder_type(placeholder.placeholder_format.type),
+                            geometry=geometry,
+                            normalized=normalized,
+                            name=placeholder.name,
+                        )
+                    )
+                layout_type = classify_layout(layout.name, slots)
+                layouts.append(
+                    LayoutManifest(
+                        layout_index=layout_index,
+                        layout_name=layout.name,
+                        layout_type=layout_type,
+                        slots=slots,
                     )
                 )
-            layout_type = classify_layout(layout.name, slots)
-            layouts.append(
-                LayoutManifest(
-                    layout_index=layout_index,
-                    layout_name=layout.name,
-                    layout_type=layout_type,
-                    slots=slots,
-                )
-            )
+                layout_index += 1
 
         manifest = TemplateManifest(
             source_hash=source_hash,

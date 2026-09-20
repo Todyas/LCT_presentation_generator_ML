@@ -17,9 +17,10 @@ from app.core.builder.autofit import apply_autofit_to_text_frame, autofit_font_s
 from app.models.presentation_ir import BulletBlock, ChartData, MetricCard, TableData
 from app.models.template_manifest import Geometry, ThemeColors
 
-_METRIC_VALUE_MAX_PT = 32
+_METRIC_VALUE_MAX_PT = 28
 _METRIC_LABEL_MAX_PT = 14
-_METRIC_CARD_GAP_EMU = 137_160  # 0.15in gap between cards in a row
+_METRIC_TEXT_MARGIN_PT = 4  # tight inner margin so long values like "2,4 млрд ₽" keep their width
+_METRIC_CARD_GAP_EMU = 317_500  # 25pt gap between cards in a row, wide enough to stop edge clipping
 _METRIC_CARD_MAX_HEIGHT_EMU = 1_600_200  # ~1.75in cap so a lone card "row" isn't absurdly tall
 
 CHART_TYPE_MAP = {
@@ -84,14 +85,19 @@ def render_metric_card(slide: Slide, geometry: Geometry, card: MetricCard, theme
     shape.fill.fore_color.rgb = _rgb(theme.lt2)
     shape.line.color.rgb = _rgb(theme.accent1)
 
+    margin_emu = int(Pt(_METRIC_TEXT_MARGIN_PT))
+    usable_width = geometry.width_emu - 2 * margin_emu
+
     value_height = int(geometry.height_emu * 0.6)
     value_box = slide.shapes.add_textbox(
         Emu(geometry.left_emu), Emu(geometry.top_emu),
         Emu(geometry.width_emu), Emu(value_height),
     )
+    value_box.text_frame.margin_left = Pt(_METRIC_TEXT_MARGIN_PT)
+    value_box.text_frame.margin_right = Pt(_METRIC_TEXT_MARGIN_PT)
     value_box.text_frame.text = card.value
     value_size = autofit_font_size(
-        [card.value], geometry.width_emu, value_height, font_path, max_size_pt=_METRIC_VALUE_MAX_PT
+        [card.value], usable_width, value_height, font_path, max_size_pt=_METRIC_VALUE_MAX_PT
     )
     value_box.text_frame.paragraphs[0].runs[0].font.size = Pt(value_size)
     value_box.text_frame.paragraphs[0].runs[0].font.bold = True
@@ -102,9 +108,11 @@ def render_metric_card(slide: Slide, geometry: Geometry, card: MetricCard, theme
         Emu(geometry.left_emu), Emu(label_top),
         Emu(geometry.width_emu), Emu(label_height),
     )
+    label_box.text_frame.margin_left = Pt(_METRIC_TEXT_MARGIN_PT)
+    label_box.text_frame.margin_right = Pt(_METRIC_TEXT_MARGIN_PT)
     label_box.text_frame.text = card.label
     label_size = autofit_font_size(
-        [card.label], geometry.width_emu, label_height, font_path, max_size_pt=_METRIC_LABEL_MAX_PT
+        [card.label], usable_width, label_height, font_path, max_size_pt=_METRIC_LABEL_MAX_PT
     )
     label_box.text_frame.paragraphs[0].runs[0].font.size = Pt(label_size)
 

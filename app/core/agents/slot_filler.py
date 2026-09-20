@@ -39,7 +39,7 @@ async def fill_slide(
     model: str,
     max_retries: int = 2,
 ) -> SlideIR:
-    resolved_layout = manifest.find_layout_or_fallback(item.suggested_layout_type)
+    resolved_layout = manifest.find_layout_or_fallback(item.suggested_layout_type, item.slide_index)
     allowed_components = _ALLOWED_COMPONENTS_BY_LAYOUT.get(
         resolved_layout.layout_type, _DEFAULT_ALLOWED_COMPONENTS
     )

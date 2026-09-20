@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from itertools import groupby
 from pathlib import Path
 
 from pptx import Presentation
 from pptx.presentation import Presentation as PptxPresentation
 from pptx.shapes.base import BaseShape
-from pptx.slide import Slide
+from pptx.slide import Slide, SlideLayout
 
 from app.core.builder.autofit import apply_autofit_to_text_frame
 from app.core.builder.shape_factory import (
@@ -46,6 +45,7 @@ class BuildResult:
 SLIDE_MARGIN_EMU = 91_440  # 0.1 inch — spacing between an auto-placed component and its predecessor
 _FALLBACK_HEIGHT_EMU = 1_500_000  # default box height when no matching slot exists, not a slide coordinate
 _FALLBACK_WIDTH_RATIO = 0.8  # fraction of slide width used only when a layout has no content slots at all
+_COLUMN_GAP_EMU = 137_160  # 0.15in gap between two bullet-block columns sharing one slot
 
 # invert Sprint 1's PP_PLACEHOLDER -> PlaceholderType map so lookups stay consistent with the parser
 _OUR_TO_PPTX_PLACEHOLDER_TYPES: dict[PlaceholderType, set[int]] = {}
@@ -66,14 +66,29 @@ _CHROME_PLACEHOLDER_TYPES = frozenset(
 )
 
 
-def _group_components(components: list[SlideComponent]) -> list[list[SlideComponent]]:
+def _group_components(components: list[SlideComponent], pair_bullet_blocks: bool) -> list[list[SlideComponent]]:
     groups: list[list[SlideComponent]] = []
-    for is_metric, group in groupby(components, key=lambda c: isinstance(c, MetricCard)):
-        chunk = list(group)
-        if is_metric:
-            groups.append(chunk)
-        else:
-            groups.extend([c] for c in chunk)
+    i = 0
+    while i < len(components):
+        component = components[i]
+        if isinstance(component, MetricCard):
+            j = i
+            while j < len(components) and isinstance(components[j], MetricCard):
+                j += 1
+            groups.append(components[i:j])
+            i = j
+            continue
+        if (
+            pair_bullet_blocks
+            and isinstance(component, BulletBlock)
+            and i + 1 < len(components)
+            and isinstance(components[i + 1], BulletBlock)
+        ):
+            groups.append([component, components[i + 1]])
+            i += 2
+            continue
+        groups.append([component])
+        i += 1
     return groups
 
 
@@ -81,11 +96,12 @@ class PptxBuilder:
     def build(self, template_path: str, manifest: TemplateManifest, ir: PresentationIR) -> BuildResult:
         prs = Presentation(template_path)
         self._strip_existing_slides(prs)
+        all_layouts = self._all_slide_layouts(prs)
 
         bbox_map: dict[int, dict[str, BBox]] = {}
         for slide_ir in ir.slides:
-            layout = manifest.find_layout_or_fallback(slide_ir.layout_type)
-            pptx_layout = prs.slide_layouts[layout.layout_index]
+            layout = manifest.find_layout_or_fallback(slide_ir.layout_type, slide_ir.slide_index)
+            pptx_layout = all_layouts[layout.layout_index]
             slide = prs.slides.add_slide(pptx_layout)
 
             shape_boxes: dict[str, BBox] = {}
@@ -110,8 +126,15 @@ class PptxBuilder:
                 else 0
             )
 
+            bullet_block_count = sum(1 for c in slide_ir.components if isinstance(c, BulletBlock))
+            available_body_slots = sum(
+                1 for s in layout.slots
+                if s.placeholder_type == PlaceholderType.BODY and s.placeholder_idx not in used_placeholder_idxs
+            )
+            pair_bullet_blocks = bullet_block_count == 2 and available_body_slots < 2
+
             component_index = 0
-            for group in _group_components(slide_ir.components):
+            for group in _group_components(slide_ir.components, pair_bullet_blocks):
                 if isinstance(group[0], MetricCard):
                     geometry, _, _ = self._resolve_geometry(
                         slide, group[0], layout, used_placeholder_idxs, prs, cursor_bottom_emu
@@ -121,6 +144,22 @@ class PptxBuilder:
                         shape_boxes[f"component_{component_index}"] = bbox
                         component_index += 1
                     cursor_bottom_emu = geometry.top_emu + geometry.height_emu + SLIDE_MARGIN_EMU
+                    continue
+
+                if len(group) == 2 and all(isinstance(c, BulletBlock) for c in group):
+                    # the matched slot (or fallback box) becomes a shared container split into two
+                    # columns, so the original single-region placeholder is left unclaimed here and
+                    # gets purged below rather than showing its own ghost text under the columns
+                    container_geometry, _, _ = self._resolve_geometry(
+                        slide, group[0], layout, used_placeholder_idxs, prs, cursor_bottom_emu
+                    )
+                    for block, col_geometry in zip(group, self._split_into_columns(container_geometry)):
+                        bbox = render_bullet_component(
+                            slide, col_geometry, None, block, font_path, manifest.fonts.minor_latin
+                        )
+                        shape_boxes[f"component_{component_index}"] = bbox
+                        component_index += 1
+                    cursor_bottom_emu = container_geometry.top_emu + container_geometry.height_emu + SLIDE_MARGIN_EMU
                     continue
 
                 component = group[0]
@@ -141,6 +180,21 @@ class PptxBuilder:
         output_path = str(Path(template_path).with_name(f"built_{ir.variant}.pptx"))
         prs.save(output_path)
         return BuildResult(pptx_path=output_path, bbox_map=bbox_map)
+
+    def _all_slide_layouts(self, prs: PptxPresentation) -> list[SlideLayout]:
+        return [layout for master in prs.slide_masters for layout in master.slide_layouts]
+
+    def _split_into_columns(self, geometry: Geometry) -> tuple[Geometry, Geometry]:
+        col_width = (geometry.width_emu - _COLUMN_GAP_EMU) // 2
+        left_col = Geometry(
+            left_emu=geometry.left_emu, top_emu=geometry.top_emu,
+            width_emu=col_width, height_emu=geometry.height_emu,
+        )
+        right_col = Geometry(
+            left_emu=geometry.left_emu + col_width + _COLUMN_GAP_EMU, top_emu=geometry.top_emu,
+            width_emu=col_width, height_emu=geometry.height_emu,
+        )
+        return left_col, right_col
 
     def _strip_existing_slides(self, prs: PptxPresentation) -> None:
         xml_slides = prs.slides._sldIdLst

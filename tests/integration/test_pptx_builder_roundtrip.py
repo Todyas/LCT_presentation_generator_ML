@@ -190,11 +190,14 @@ def test_duplicate_component_types_do_not_collide(tmp_path):
 
     result = PptxBuilder().build(template_path, manifest, ir)
 
+    # exactly two BulletBlocks sharing one slot are split into non-overlapping side-by-side
+    # columns rather than either colliding at the same geometry or stacking vertically
     boxes = result.bbox_map[0]
     first_bbox = boxes["component_0"]
     second_bbox = boxes["component_1"]
-    assert (first_bbox.x, first_bbox.y) != (second_bbox.x, second_bbox.y)
-    assert first_bbox.y != second_bbox.y
+    assert first_bbox.y == second_bbox.y
+    assert first_bbox.x != second_bbox.x
+    assert first_bbox.x + first_bbox.w <= second_bbox.x
 
 
 def test_reopened_file_has_no_repair_warning_indicators(tmp_path):
