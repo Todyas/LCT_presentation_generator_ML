@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from pptx.chart.data import CategoryChartData
@@ -43,11 +44,27 @@ def _rgb(hex_color: str) -> RGBColor:
     return RGBColor.from_string(hex_color)
 
 
+_BOLD_MARKDOWN = re.compile(r"\*\*(.+?)\*\*")
+
+
+def _render_bullet_text(paragraph, text: str) -> None:
+    pos = 0
+    for match in _BOLD_MARKDOWN.finditer(text):
+        if match.start() > pos:
+            paragraph.add_run().text = text[pos : match.start()]
+        bold_run = paragraph.add_run()
+        bold_run.text = match.group(1)
+        bold_run.font.bold = True
+        pos = match.end()
+    if pos < len(text) or not paragraph.runs:
+        paragraph.add_run().text = text[pos:]
+
+
 def render_bullet_block(text_frame: TextFrame, block: BulletBlock, font_path: str, font_name: str) -> None:
     text_frame.clear()
     for i, item in enumerate(block.items):
         paragraph = text_frame.paragraphs[0] if i == 0 else text_frame.add_paragraph()
-        paragraph.text = item.text
+        _render_bullet_text(paragraph, item.text)
         for run in paragraph.runs:
             run.font.name = font_name
 
