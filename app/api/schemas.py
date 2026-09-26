@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -7,6 +8,17 @@ from pydantic import BaseModel, Field
 
 class JobCreatedResponse(BaseModel):
     job_id: str
+
+
+class HealthResponse(BaseModel):
+    status: Literal["ok"] = "ok"
+
+
+class JobSummaryDTO(BaseModel):
+    job_id: str
+    status: Literal["PENDING", "RUNNING", "DONE", "FAILED"]
+    created_at: datetime
+    template_filename: str
 
 
 class VariantResultDTO(BaseModel):
