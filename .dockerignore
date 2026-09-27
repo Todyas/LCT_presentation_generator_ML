@@ -5,6 +5,8 @@
 .ruff_cache
 .env
 storage
+postgres_data
+redis_data
 __pycache__
 **/__pycache__
 *.pyc

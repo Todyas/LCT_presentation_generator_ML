@@ -10,7 +10,7 @@ from app.models.template_manifest import TemplateManifest
 VARIANT_DESCRIPTIONS: dict[str, str] = {
     "A": "Executive: big KPIs and thesis statements. Minimal bullets. Each slide carries one key conclusion.",
     "B": "Analytical: prioritize native charts (ChartData) and comparison tables (TableData) over text.",
-    "C": "Structural/Process: prioritize step-by-step cards, timelines, and structured lists (LayoutType.PROCESS_TIMELINE).",
+    "C": "Pitch: optimize for presenting on a large screen: strong storytelling, larger visual blocks, fewer lists, and concise speaker-friendly messages.",
 }
 
 

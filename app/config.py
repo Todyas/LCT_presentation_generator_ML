@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 20_000_000
     cors_allow_origins: list[str] = ["*"]
 
+    database_url: str = "sqlite+pysqlite:///:memory:"
+    redis_url: str = "redis://localhost:6379/0"
+    task_queue_enabled: bool = False
+
 
 def get_settings() -> Settings:
     return Settings()

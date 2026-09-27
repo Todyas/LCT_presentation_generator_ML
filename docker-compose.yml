@@ -1,9 +1,123 @@
+x-backend: &backend
+  image: ${BACKEND_IMAGE:-slideops-backend}:${IMAGE_TAG:-local}
+  build:
+    context: .
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+
 services:
-  app:
-    build: .
-    ports:
-      - "8000:8000"
-    env_file:
-      - .env
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-slideops}
+      POSTGRES_USER: ${POSTGRES_USER:-slideops}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-slideops}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
     volumes:
-      - ./storage:/app/storage
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  migrate:
+    <<: *backend
+    command: ["alembic", "upgrade", "head"]
+    environment: &backend_environment
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-slideops}:${POSTGRES_PASSWORD:-slideops}@postgres:5432/${POSTGRES_DB:-slideops}
+      REDIS_URL: redis://redis:6379/0
+      TASK_QUEUE_ENABLED: "true"
+      STORAGE_DIR: /app/storage
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:8001/v1}
+      LLM_MODEL: ${LLM_MODEL:-Qwen2.5-32B-Instruct}
+      LLM_API_KEY: ${LLM_API_KEY:-EMPTY}
+      LLM_MAX_CONCURRENCY: ${LLM_MAX_CONCURRENCY:-4}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-["*"]}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  init-storage:
+    <<: *backend
+    user: root
+    command: ["chown", "-R", "10001:10001", "/app/storage"]
+    volumes:
+      - generated_storage:/app/storage
+
+  app:
+    <<: *backend
+    environment: *backend_environment
+    volumes:
+      - generated_storage:/app/storage
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      init-storage:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  worker:
+    <<: *backend
+    command:
+      [
+        "celery",
+        "-A",
+        "app.worker.celery_app:celery_app",
+        "worker",
+        "--loglevel=INFO",
+        "--concurrency=2",
+      ]
+    environment: *backend_environment
+    volumes:
+      - generated_storage:/app/storage
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      init-storage:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 2m
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "8000:80"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  generated_storage:
