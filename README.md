@@ -12,11 +12,13 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Swagger: `http://localhost:8000/docs`.
+Swagger без внешнего Nginx: `http://127.0.0.1:1494/docs`.
 
-Compose поднимает Nginx, API, Celery worker, PostgreSQL и Redis. Миграции
+Compose поднимает API, Celery worker, PostgreSQL и Redis. Миграции
 Alembic выполняются отдельным одноразовым сервисом до старта API и worker.
 Сгенерированные PPTX/PDF/HTML/PNG лежат в общем persistent volume.
+API привязан только к `127.0.0.1:1494`; внешний Nginx должен проксировать на
+этот адрес.
 
 CI запускает lint, тесты, цикл Alembic upgrade/downgrade и Docker build. В
 `main` образ публикуется в GHCR с immutable tag равным commit SHA. Для deploy

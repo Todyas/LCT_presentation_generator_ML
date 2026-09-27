@@ -63,4 +63,4 @@ jobs:
             "cd '$DEPLOY_PATH' && git pull --ff-only && \
              BACKEND_IMAGE='${REGISTRY_IMAGE}' IMAGE_TAG='$IMAGE_TAG' docker compose pull && \
              BACKEND_IMAGE='${REGISTRY_IMAGE}' IMAGE_TAG='$IMAGE_TAG' docker compose up -d --no-build && \
-             curl --fail --retry 12 --retry-delay 5 http://localhost:8000/health/ready"
+             curl --fail --retry 12 --retry-delay 5 http://localhost:1494/health/ready"

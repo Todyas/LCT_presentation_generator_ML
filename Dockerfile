@@ -23,5 +23,5 @@ RUN groupadd --gid 10001 appuser \
 ENV PYTHONUNBUFFERED=1
 ENV PATH="/app/.venv/bin:$PATH"
 USER appuser
-EXPOSE 8000
-CMD ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+EXPOSE 1494
+CMD ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "1494"]
