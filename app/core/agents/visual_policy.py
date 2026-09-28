@@ -52,11 +52,18 @@ def _icon_list_from_bullets(slide: SlideIR) -> SlideIR | None:
     items = []
     for index, point in enumerate(blocks[0].items):
         title, separator, description = point.text.partition(":")
+        title = title.strip(" *") if separator else point.text.strip(" *")
+        description = description.strip() if separator else ""
+        if len(title) > 60:
+            title, overflow = title[:57].rstrip() + "...", title[57:]
+            description = (overflow + " " + description).strip() if description else overflow
+        if len(description) > 140:
+            description = description[:137].rstrip() + "..."
         items.append(
             IconListItem(
                 icon=_ICONS[index % len(_ICONS)],
-                title=title.strip(" *") if separator else point.text.strip(" *"),
-                description=description.strip() if separator else "",
+                title=title,
+                description=description,
             )
         )
     return slide.model_copy(update={"components": [IconListData(items=items)]})
