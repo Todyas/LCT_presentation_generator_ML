@@ -156,6 +156,38 @@ async def test_build_outline_accepts_best_grounded_result_after_duplicate_retrie
     assert llm.complete_structured.await_count == 3
 
 
+async def test_build_outline_guarantees_exact_requested_slide_count():
+    eleven = Outline(variant="B", items=[_outline_item(i % 10) for i in range(11)])
+    eleven.items[10] = eleven.items[10].model_copy(
+        update={
+            "slide_index": 10,
+            "working_title": "Additional context",
+            "key_message": "Distinct implementation context message",
+            "content_hint": "Implementation context from the source brief",
+        }
+    )
+    llm = AsyncMock()
+    llm.complete_structured = AsyncMock(return_value=eleven)
+
+    result = await build_outline(
+        brief=(
+            "The service automates preparation of corporate presentations. "
+            "It uses a supplied brand template and source material."
+        ),
+        manifest=_manifest(),
+        variant="B",
+        llm=llm,
+        registry=PromptRegistry("skills"),
+        model="qwen",
+        n_slides_min=12,
+        n_slides_max=12,
+    )
+
+    assert len(result.items) == 12
+    assert [item.slide_index for item in result.items] == list(range(12))
+    assert llm.complete_structured.await_count == 3
+
+
 def test_empty_content_hint_falls_back_to_key_message():
     item = _outline_item(0).model_copy(update={"content_hint": ""})
     reparsed = OutlineItem.model_validate(item.model_dump())

@@ -358,6 +358,63 @@ class PptxBuilder:
         cursor_bottom_emu: int,
     ) -> tuple[Geometry, int | None, BaseShape | None]:
         wanted_type = _COMPONENT_TO_PLACEHOLDER_TYPE.get(type(component))
+        visual_component = isinstance(
+            component,
+            (ComparisonData, ProcessData, IconListData, ChartData, TableData),
+        )
+        if visual_component:
+            matching_slots = [
+                slot
+                for slot in layout.slots
+                if slot.placeholder_type == wanted_type
+                and slot.placeholder_idx not in used_placeholder_idxs
+            ]
+            # Real wide chart/table placeholders are useful. Narrow inferred
+            # sample boxes are not: they caused five-step diagrams to be
+            # squeezed into the left third of a slide.
+            if matching_slots:
+                slot = matching_slots[0]
+                if slot.geometry.width_emu >= int(prs.slide_width * 0.58):
+                    return (
+                        slot.geometry,
+                        slot.placeholder_idx,
+                        self._find_placeholder_by_idx(slide, slot.placeholder_idx),
+                    )
+            body_slots = [
+                slot
+                for slot in layout.slots
+                if slot.placeholder_type == PlaceholderType.BODY
+                and slot.placeholder_idx not in used_placeholder_idxs
+            ]
+            explicit_body_slots = [slot for slot in body_slots if not slot.inferred]
+            if explicit_body_slots:
+                first = explicit_body_slots[0]
+                left = min(slot.geometry.left_emu for slot in explicit_body_slots)
+                top = min(slot.geometry.top_emu for slot in explicit_body_slots)
+                right = max(slot.geometry.right_emu for slot in explicit_body_slots)
+                bottom = max(slot.geometry.bottom_emu for slot in explicit_body_slots)
+                return (
+                    Geometry(
+                        left_emu=left,
+                        top_emu=top,
+                        width_emu=right - left,
+                        height_emu=bottom - top,
+                    ),
+                    first.placeholder_idx,
+                    self._find_placeholder_by_idx(slide, first.placeholder_idx),
+                )
+            claimed = (
+                body_slots[0]
+                if body_slots
+                else (matching_slots[0] if matching_slots else None)
+            )
+            return (
+                self._compute_visual_geometry(layout, prs, cursor_bottom_emu),
+                claimed.placeholder_idx if claimed is not None else None,
+                self._find_placeholder_by_idx(slide, claimed.placeholder_idx)
+                if claimed is not None
+                else None,
+            )
         if wanted_type is not None:
             for slot in layout.slots:
                 if (
@@ -404,6 +461,22 @@ class PptxBuilder:
             self._compute_fallback_geometry(layout, prs, cursor_bottom_emu),
             None,
             None,
+        )
+
+    def _compute_visual_geometry(
+        self, layout: LayoutManifest, prs: PptxPresentation, cursor_bottom_emu: int
+    ) -> Geometry:
+        """Large predictable canvas for charts and custom visual components."""
+        margin_x = int(prs.slide_width * 0.07)
+        bottom = int(prs.slide_height * 0.90)
+        top = max(cursor_bottom_emu + SLIDE_MARGIN_EMU, int(prs.slide_height * 0.24))
+        if top >= bottom - int(prs.slide_height * 0.30):
+            top = int(prs.slide_height * 0.25)
+        return Geometry(
+            left_emu=margin_x,
+            top_emu=top,
+            width_emu=int(prs.slide_width * 0.86),
+            height_emu=max(400_000, bottom - top),
         )
 
     def _compute_fallback_geometry(
@@ -465,6 +538,9 @@ class PptxBuilder:
                 component,
                 manifest.colors,
                 manifest.fonts.minor_latin,
+                font_path,
+                manifest.slide_width_emu,
+                manifest.slide_height_emu,
             )
             if placeholder_shape is not None and not hasattr(
                 placeholder_shape, "insert_table"
@@ -475,9 +551,7 @@ class PptxBuilder:
             bbox = render_chart_component(
                 slide, geometry, placeholder_shape, component, manifest.colors
             )
-            if placeholder_shape is not None and not hasattr(
-                placeholder_shape, "insert_chart"
-            ):
+            if placeholder_shape is not None:
                 self._remove_shape(placeholder_shape)
             return bbox
         if isinstance(component, ComparisonData):
@@ -491,6 +565,7 @@ class PptxBuilder:
                 manifest.fonts.minor_latin,
                 manifest.slide_width_emu,
                 manifest.slide_height_emu,
+                font_path,
             )
         if isinstance(component, ProcessData):
             if placeholder_shape is not None:
@@ -503,6 +578,7 @@ class PptxBuilder:
                 manifest.fonts.minor_latin,
                 manifest.slide_width_emu,
                 manifest.slide_height_emu,
+                font_path,
             )
         if isinstance(component, IconListData):
             if placeholder_shape is not None:
@@ -515,6 +591,7 @@ class PptxBuilder:
                 manifest.fonts.minor_latin,
                 manifest.slide_width_emu,
                 manifest.slide_height_emu,
+                font_path,
             )
         if isinstance(component, ImagePlaceholder):
             bbox = render_image_placeholder(

@@ -440,12 +440,18 @@ def fill_table_cells(
     for r in range(1, len(table.rows) + 1):
         for c in range(len(table.headers)):
             cell = pptx_table.cell(r, c)
-            if r % 2 == 0:
-                cell.fill.solid()
-                cell.fill.fore_color.rgb = _rgb(theme.lt2)
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = _rgb(theme.lt1 if r % 2 else theme.lt2)
+            cell.margin_left = Pt(8)
+            cell.margin_right = Pt(8)
+            cell.margin_top = Pt(5)
+            cell.margin_bottom = Pt(5)
             for paragraph in cell.text_frame.paragraphs:
+                paragraph.space_after = Pt(2)
                 for run in paragraph.runs:
                     run.font.color.rgb = _rgb(theme.dk1)
+                    run.font.size = Pt(12)
+                    run.font.bold = c == 0
                     if font_name:
                         run.font.name = font_name
 
@@ -493,6 +499,9 @@ def render_table_component(
     table: TableData,
     theme: ThemeColors,
     font_name: str | None = None,
+    font_path: str = "",
+    slide_width_emu: int = 12_192_000,
+    slide_height_emu: int = 6_858_000,
 ) -> BBox:
     if isinstance(placeholder_shape, TablePlaceholder):
         return render_table_into_placeholder(placeholder_shape, table, theme, font_name)
@@ -508,7 +517,7 @@ def build_chart_data(chart: ChartData) -> CategoryChartData:
 
 
 def _style_chart(chart_shape, theme: ThemeColors | None) -> None:
-    chart_shape.chart_style = 10
+    chart_shape.chart_style = 2
     chart_shape.has_legend = len(chart_shape.series) > 1
     if theme is None:
         return
@@ -529,18 +538,46 @@ def _style_chart(chart_shape, theme: ThemeColors | None) -> None:
             series.format.line.color.rgb = color
         except (AttributeError, ValueError):
             pass
+    for axis_name in ("category_axis", "value_axis"):
+        try:
+            axis = getattr(chart_shape, axis_name)
+            axis.tick_labels.font.name = "Arial"
+            axis.tick_labels.font.size = Pt(10)
+            axis.tick_labels.font.color.rgb = _rgb(theme.dk1)
+            axis.format.line.color.rgb = _rgb(theme.lt2)
+            if axis_name == "value_axis":
+                axis.major_gridlines.format.line.color.rgb = _rgb(theme.lt2)
+        except (AttributeError, ValueError):
+            pass
+    try:
+        chart_shape.legend.font.size = Pt(10)
+        chart_shape.legend.font.color.rgb = _rgb(theme.dk1)
+    except (AttributeError, ValueError):
+        pass
 
 
 def render_chart(
     slide: Slide, geometry: Geometry, chart: ChartData, theme: ThemeColors | None = None
 ) -> BBox:
+    if theme is not None:
+        panel = slide.shapes.add_shape(
+            MSO_SHAPE.ROUNDED_RECTANGLE,
+            Emu(geometry.left_emu),
+            Emu(geometry.top_emu),
+            Emu(geometry.width_emu),
+            Emu(geometry.height_emu),
+        )
+        panel.fill.solid()
+        panel.fill.fore_color.rgb = _rgb(theme.lt1)
+        panel.line.color.rgb = _rgb(theme.lt2)
     chart_data = build_chart_data(chart)
+    inset = 100_000 if theme is not None else 0
     graphic_frame = slide.shapes.add_chart(
         CHART_TYPE_MAP[chart.chart_type],
-        Emu(geometry.left_emu),
-        Emu(geometry.top_emu),
-        Emu(geometry.width_emu),
-        Emu(geometry.height_emu),
+        Emu(geometry.left_emu + inset),
+        Emu(geometry.top_emu + inset),
+        Emu(geometry.width_emu - 2 * inset),
+        Emu(geometry.height_emu - 2 * inset),
         chart_data,
     )
     _style_chart(graphic_frame.chart, theme)
@@ -568,8 +605,6 @@ def render_chart_component(
     chart: ChartData,
     theme: ThemeColors | None = None,
 ) -> BBox:
-    if isinstance(placeholder_shape, ChartPlaceholder):
-        return render_chart_into_placeholder(placeholder_shape, chart, theme)
     return render_chart(slide, geometry, chart, theme)
 
 
@@ -581,6 +616,7 @@ def render_comparison(
     font_name: str,
     slide_width_emu: int,
     slide_height_emu: int,
+    font_path: str = "",
 ) -> BBox:
     surface, text_color, accent = _surface_palette(
         slide, theme, slide_width_emu, slide_height_emu
@@ -633,6 +669,19 @@ def render_comparison(
             for run in paragraph.runs:
                 run.font.color.rgb = _rgb(text_color)
                 run.font.size = Pt(body_size)
+        if font_path:
+            apply_autofit_to_text_frame(
+                body.text_frame,
+                Geometry(
+                    left_emu=left + 90_000,
+                    top_emu=geometry.top_emu + band_height + 70_000,
+                    width_emu=width - 180_000,
+                    height_emu=geometry.height_emu - band_height - 140_000,
+                ),
+                font_path,
+                max_size_pt=body_size,
+                line_spacing=1.08,
+            )
     return BBox(
         geometry.left_emu, geometry.top_emu, geometry.width_emu, geometry.height_emu
     )
@@ -646,58 +695,106 @@ def render_process(
     font_name: str,
     slide_width_emu: int,
     slide_height_emu: int,
+    font_path: str = "",
 ) -> BBox:
-    _, text_color, accent = _surface_palette(
+    surface, text_color, accent = _surface_palette(
         slide, theme, slide_width_emu, slide_height_emu
     )
     count = len(process.steps)
-    gap = 95_000
-    step_width = (geometry.width_emu - gap * (count - 1)) // count
-    circle_size = min(520_000, step_width // 2)
-    line_top = geometry.top_emu + circle_size // 2
-    if count > 1:
-        connector = slide.shapes.add_shape(
-            MSO_SHAPE.RECTANGLE,
-            Emu(geometry.left_emu + circle_size // 2),
-            Emu(line_top - 18_000),
-            Emu(geometry.width_emu - circle_size),
-            Emu(36_000),
-        )
-        connector.fill.solid()
-        connector.fill.fore_color.rgb = _rgb(accent)
-        connector.line.fill.background()
+    columns = count if count <= 4 else 3
+    rows = (count + columns - 1) // columns
+    gap_x, gap_y = 150_000, 130_000
+    step_width = (geometry.width_emu - gap_x * (columns - 1)) // columns
+    step_height = (geometry.height_emu - gap_y * (rows - 1)) // rows
     for index, step in enumerate(process.steps):
-        left = geometry.left_emu + index * (step_width + gap)
-        circle = slide.shapes.add_shape(
-            MSO_SHAPE.OVAL,
-            Emu(left + (step_width - circle_size) // 2),
-            Emu(geometry.top_emu),
-            Emu(circle_size),
-            Emu(circle_size),
-        )
-        circle.fill.solid()
-        circle.fill.fore_color.rgb = _rgb(accent)
-        circle.line.fill.background()
-        _style_text_frame(
-            circle.text_frame, str(index + 1), theme.lt1, font_name, 18, bold=True
-        )
-        circle.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
-        circle.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
-        text_box = slide.shapes.add_textbox(
+        row, column = divmod(index, columns)
+        left = geometry.left_emu + column * (step_width + gap_x)
+        top = geometry.top_emu + row * (step_height + gap_y)
+        card = slide.shapes.add_shape(
+            MSO_SHAPE.ROUNDED_RECTANGLE,
             Emu(left),
-            Emu(geometry.top_emu + circle_size + 75_000),
+            Emu(top),
             Emu(step_width),
-            Emu(geometry.height_emu - circle_size - 75_000),
+            Emu(step_height),
         )
-        content = (
-            step.title if not step.description else f"{step.title}\n{step.description}"
+        card.fill.solid()
+        card.fill.fore_color.rgb = _rgb(surface)
+        card.line.color.rgb = _rgb(
+            theme.dk2 if not _is_dark(surface) else theme.accent1
         )
-        text_size = 14 if count <= 4 else 11
+        band = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE,
+            Emu(left),
+            Emu(top),
+            Emu(58_000),
+            Emu(step_height),
+        )
+        band.fill.solid()
+        band.fill.fore_color.rgb = _rgb(accent)
+        band.line.fill.background()
+        badge_size = min(390_000, step_height // 3)
+        badge = slide.shapes.add_shape(
+            MSO_SHAPE.ROUNDED_RECTANGLE,
+            Emu(left + 150_000),
+            Emu(top + 120_000),
+            Emu(badge_size),
+            Emu(badge_size),
+        )
+        badge.fill.solid()
+        badge.fill.fore_color.rgb = _rgb(accent)
+        badge.line.fill.background()
         _style_text_frame(
-            text_box.text_frame, content, text_color, font_name, text_size, bold=False
+            badge.text_frame, str(index + 1), theme.lt1, font_name, 16, bold=True
         )
-        text_box.text_frame.paragraphs[0].runs[0].font.bold = True
-        text_box.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
+        badge.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+        badge.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
+        title_box = slide.shapes.add_textbox(
+            Emu(left + badge_size + 230_000),
+            Emu(top + 105_000),
+            Emu(step_width - badge_size - 320_000),
+            Emu(badge_size + 50_000),
+        )
+        _style_text_frame(
+            title_box.text_frame, step.title, text_color, font_name, 14, bold=True
+        )
+        description = slide.shapes.add_textbox(
+            Emu(left + 150_000),
+            Emu(top + badge_size + 190_000),
+            Emu(step_width - 270_000),
+            Emu(max(100_000, step_height - badge_size - 280_000)),
+        )
+        _style_text_frame(
+            description.text_frame,
+            step.description or step.title,
+            text_color,
+            font_name,
+            11,
+        )
+        if font_path:
+            apply_autofit_to_text_frame(
+                title_box.text_frame,
+                Geometry(
+                    left_emu=left,
+                    top_emu=top,
+                    width_emu=step_width - badge_size - 250_000,
+                    height_emu=badge_size,
+                ),
+                font_path,
+                max_size_pt=15,
+                line_spacing=1.0,
+            )
+            apply_autofit_to_text_frame(
+                description.text_frame,
+                Geometry(
+                    left_emu=left,
+                    top_emu=top,
+                    width_emu=step_width - 270_000,
+                    height_emu=max(100_000, step_height - badge_size - 280_000),
+                ),
+                font_path,
+                max_size_pt=12,
+                line_spacing=1.05,
+            )
     return BBox(
         geometry.left_emu, geometry.top_emu, geometry.width_emu, geometry.height_emu
     )
@@ -711,6 +808,7 @@ def render_icon_list(
     font_name: str,
     slide_width_emu: int,
     slide_height_emu: int,
+    font_path: str = "",
 ) -> BBox:
     surface, text_color, accent = _surface_palette(
         slide, theme, slide_width_emu, slide_height_emu
@@ -720,17 +818,7 @@ def render_icon_list(
     gap = 120_000
     cell_width = (geometry.width_emu - gap * (columns - 1)) // columns
     cell_height = (geometry.height_emu - gap * (rows - 1)) // rows
-    icon_size = min(440_000, cell_height - 100_000)
-    symbols = {
-        "check": "✓",
-        "shield": "◆",
-        "speed": "➜",
-        "people": "●",
-        "cloud": "☁",
-        "gear": "⚙",
-        "chart": "↗",
-        "star": "★",
-    }
+    icon_size = min(390_000, cell_height - 150_000)
     for index, item in enumerate(icon_list.items):
         row, column = divmod(index, columns)
         left = geometry.left_emu + column * (cell_width + gap)
@@ -744,9 +832,11 @@ def render_icon_list(
         )
         card.fill.solid()
         card.fill.fore_color.rgb = _rgb(surface)
-        card.line.color.rgb = _rgb(theme.lt2 if not _is_dark(surface) else theme.dk2)
+        card.line.color.rgb = _rgb(
+            theme.dk2 if not _is_dark(surface) else theme.accent1
+        )
         icon = slide.shapes.add_shape(
-            MSO_SHAPE.OVAL,
+            MSO_SHAPE.ROUNDED_RECTANGLE,
             Emu(left + 80_000),
             Emu(top + (cell_height - icon_size) // 2),
             Emu(icon_size),
@@ -755,26 +845,48 @@ def render_icon_list(
         icon.fill.solid()
         icon.fill.fore_color.rgb = _rgb(accent)
         icon.line.fill.background()
-        _style_text_frame(
-            icon.text_frame, symbols[item.icon], theme.lt1, font_name, 15, bold=True
-        )
-        icon.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
-        icon.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
+        # Small brand bars are deliberately geometric and consistent; using
+        # Unicode symbols made the deck depend on fallback fonts and look like
+        # stock SmartArt.
+        for bar_index, ratio in enumerate((0.42, 0.68, 0.88)):
+            bar = slide.shapes.add_shape(
+                MSO_SHAPE.ROUNDED_RECTANGLE,
+                Emu(left + 145_000),
+                Emu(top + (cell_height - icon_size) // 2 + 90_000 + bar_index * 85_000),
+                Emu(int((icon_size - 130_000) * ratio)),
+                Emu(36_000),
+            )
+            bar.fill.solid()
+            bar.fill.fore_color.rgb = _rgb(theme.lt1)
+            bar.line.fill.background()
         text_box = slide.shapes.add_textbox(
             Emu(left + icon_size + 150_000),
             Emu(top + 60_000),
             Emu(cell_width - icon_size - 220_000),
             Emu(cell_height - 120_000),
         )
-        content = (
-            item.title if not item.description else f"{item.title}\n{item.description}"
-        )
-        text_size = 14 if len(icon_list.items) <= 4 else 12
         _style_text_frame(
-            text_box.text_frame, content, text_color, font_name, text_size
+            text_box.text_frame,
+            item.title if not item.description else f"{item.title}\n{item.description}",
+            text_color,
+            font_name,
+            14 if len(icon_list.items) <= 4 else 12,
         )
         text_box.text_frame.paragraphs[0].runs[0].font.bold = True
         text_box.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+        if font_path:
+            apply_autofit_to_text_frame(
+                text_box.text_frame,
+                Geometry(
+                    left_emu=left,
+                    top_emu=top,
+                    width_emu=cell_width - icon_size - 220_000,
+                    height_emu=cell_height - 120_000,
+                ),
+                font_path,
+                max_size_pt=14,
+                line_spacing=1.05,
+            )
     return BBox(
         geometry.left_emu, geometry.top_emu, geometry.width_emu, geometry.height_emu
     )

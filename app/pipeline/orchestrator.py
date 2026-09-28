@@ -173,7 +173,7 @@ async def _build_variant(
 
         if len(slides) < deps.settings.n_slides_min:
             raise ValueError(
-                f"variant {variant} has only {len(slides)} slides after drops, "
+                f"variant {variant} outline produced only {len(slides)} slides, "
                 f"below minimum {deps.settings.n_slides_min}"
             )
 
