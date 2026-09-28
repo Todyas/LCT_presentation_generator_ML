@@ -18,7 +18,7 @@ COPY . .
 RUN groupadd --gid 10001 appuser \
     && useradd --uid 10001 --gid 10001 --no-create-home appuser \
     && mkdir -p /app/storage \
-    && chown -R appuser:appuser /app/storage
+    && chown -R appuser:appuser /app
 
 ENV PYTHONUNBUFFERED=1
 ENV PATH="/app/.venv/bin:$PATH"

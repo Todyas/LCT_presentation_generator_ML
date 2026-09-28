@@ -1,3 +1,5 @@
+import io
+import zipfile
 from pathlib import Path
 from unittest import mock
 
@@ -118,6 +120,57 @@ def test_analyze_template_returns_template_dna():
     assert body["master_count"] > 0
     assert body["colors"]
     assert body["fonts"]
+
+
+def test_analyze_template_degrades_when_cache_dir_is_not_writable(monkeypatch):
+    # Regression test for a production 500: the container runs as a non-root
+    # user that cannot create TemplateParser's ".cache" directory. Parsing
+    # must still succeed, just without caching.
+    original_mkdir = Path.mkdir
+
+    def _raising_mkdir(self, *args, **kwargs):
+        if self.name == ".cache":
+            raise PermissionError(13, "Permission denied", str(self))
+        return original_mkdir(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", _raising_mkdir)
+
+    raw_bytes = Path(FIXTURE_PATH).read_bytes()
+    response = client.post(
+        "/templates/analyze",
+        files={
+            "template": (
+                "template.pptx",
+                raw_bytes,
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "parsed"
+    assert body["layout_count"] > 0
+
+
+def test_analyze_template_returns_422_for_unparseable_pptx():
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("ppt/presentation.xml", "not valid presentation xml <<<")
+        zf.writestr("[Content_Types].xml", "<Types/>")
+
+    response = client.post(
+        "/templates/analyze",
+        files={
+            "template": (
+                "corrupt.pptx",
+                buf.getvalue(),
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            )
+        },
+    )
+
+    assert response.status_code == 422
 
 
 def _presentation_ir() -> PresentationIR:

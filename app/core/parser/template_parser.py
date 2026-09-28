@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import zipfile
 from pathlib import Path
 
@@ -19,6 +20,8 @@ from app.models.template_manifest import (
     TemplateManifest,
     ThemeColors,
 )
+
+logger = logging.getLogger(__name__)
 
 _THEME_PATH = "ppt/theme/theme1.xml"
 
@@ -60,9 +63,15 @@ class TemplateParser:
         source_hash = hashlib.sha256(file_bytes).hexdigest()
 
         cache_dir = Path(".cache")
-        cache_dir.mkdir(exist_ok=True)
         cache_path = cache_dir / f"{source_hash}.manifest.json"
-        if cache_path.exists():
+        cache_writable = True
+        try:
+            cache_dir.mkdir(exist_ok=True)
+        except OSError:
+            logger.warning("cache directory %s is not writable, caching disabled", cache_dir)
+            cache_writable = False
+
+        if cache_writable and cache_path.exists():
             return TemplateManifest.model_validate_json(cache_path.read_text())
 
         try:
@@ -129,5 +138,6 @@ class TemplateParser:
             layouts=layouts,
         )
 
-        cache_path.write_text(manifest.model_dump_json())
+        if cache_writable:
+            cache_path.write_text(manifest.model_dump_json())
         return manifest

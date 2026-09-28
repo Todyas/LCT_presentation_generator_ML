@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import logging
 import shutil
 import tempfile
 import zipfile
@@ -20,6 +21,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pptx import Presentation
+from pptx.presentation import Presentation as PresentationDoc
 from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -35,8 +37,11 @@ from app.api.schemas import (
 )
 from app.config import Settings, get_settings
 from app.core.parser.template_parser import TemplateParser
+from app.models.template_manifest import TemplateManifest
 from app.pipeline.jobs import JobStatus, JobStore, JobType, SlideRevisionStore
 from app.pipeline.service import run_generation_job, run_revision_job
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 _settings = get_settings()
@@ -156,17 +161,25 @@ async def analyze_template(
 
     raw_bytes = await template.read()
     _validate_pptx_upload(raw_bytes, settings.max_upload_bytes)
-    presentation = Presentation(io.BytesIO(raw_bytes))
 
-    temp_path: str | None = None
+    def _parse_template() -> tuple[PresentationDoc, TemplateManifest]:
+        presentation = Presentation(io.BytesIO(raw_bytes))
+        temp_path: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".pptx", delete=False) as temp_file:
+                temp_file.write(raw_bytes)
+                temp_path = temp_file.name
+            manifest = TemplateParser().parse(temp_path)
+        finally:
+            if temp_path is not None:
+                Path(temp_path).unlink(missing_ok=True)
+        return presentation, manifest
+
     try:
-        with tempfile.NamedTemporaryFile(suffix=".pptx", delete=False) as temp_file:
-            temp_file.write(raw_bytes)
-            temp_path = temp_file.name
-        manifest = TemplateParser().parse(temp_path)
-    finally:
-        if temp_path is not None:
-            Path(temp_path).unlink(missing_ok=True)
+        presentation, manifest = await asyncio.to_thread(_parse_template)
+    except Exception as exc:
+        logger.exception("failed to parse uploaded template %s", template.filename)
+        raise HTTPException(422, f"could not parse .pptx template: {exc}") from exc
 
     known_layouts = [
         layout for layout in manifest.layouts if layout.layout_type.value != "UNKNOWN"
