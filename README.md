@@ -23,7 +23,7 @@ API привязан только к `127.0.0.1:1494`; внешний Nginx до
 CI запускает lint, тесты, цикл Alembic upgrade/downgrade и Docker build. В
 `main` образ публикуется в GHCR с immutable tag равным commit SHA. Для deploy
 нужно создать GitHub Environment `production`, добавить secrets
-`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PATH`, `DEPLOY_SSH_KEY`,
+`DEPLOY_HOST`, `DEPLOY_PORT`, `DEPLOY_USER`, `DEPLOY_PATH`, `DEPLOY_SSH_KEY`,
 `DEPLOY_KNOWN_HOSTS` и repository variable `ENABLE_DEPLOY=true`.
 
 На сервере должны быть установлены Docker Engine и Compose v2. В `DEPLOY_PATH`

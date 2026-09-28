@@ -68,19 +68,24 @@ jobs:
       - name: Deploy immutable image
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
           IMAGE_TAG: ${{ needs.publish.outputs.image_tag }}
         run: |
           test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_PORT"
           test -n "$DEPLOY_USER"
           test -n "$DEPLOY_PATH"
           printf -v prepare_command 'mkdir -p %q/scripts' "$DEPLOY_PATH"
-          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "$prepare_command"
+          ssh -o BatchMode=yes -p "$DEPLOY_PORT" \
+            "$DEPLOY_USER@$DEPLOY_HOST" "$prepare_command"
           tar -cf - docker-compose.yml scripts/deploy.sh | \
-            ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" \
+            ssh -o BatchMode=yes -p "$DEPLOY_PORT" \
+              "$DEPLOY_USER@$DEPLOY_HOST" \
               "tar -xf - -C $(printf '%q' "$DEPLOY_PATH")"
           printf -v remote_command \
             'cd %q && ./scripts/deploy.sh %q %q' \
             "$DEPLOY_PATH" "$REGISTRY_IMAGE" "$IMAGE_TAG"
-          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "$remote_command"
+          ssh -o BatchMode=yes -p "$DEPLOY_PORT" \
+            "$DEPLOY_USER@$DEPLOY_HOST" "$remote_command"
