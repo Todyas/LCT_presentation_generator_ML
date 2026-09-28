@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pydantic import ValidationError
+
 from app.models.presentation_ir import (
     BulletBlock,
     ComparisonData,
@@ -34,14 +36,18 @@ def _process_from_bullets(slide: SlideIR) -> SlideIR | None:
     if len(points) < 3:
         return None
     steps = []
-    for point in points[:6]:
-        label, separator, description = point.partition(":")
-        steps.append(
-            ProcessStep(
-                title=label.strip(" *") if separator else point.strip(" *"),
-                description=description.strip() if separator else "",
+    try:
+        for point in points[:6]:
+            label, separator, description = point.partition(":")
+            steps.append(
+                ProcessStep(
+                    title=label.strip(" *") if separator else point.strip(" *"),
+                    description=description.strip() if separator else "",
+                )
             )
-        )
+    except ValidationError:
+        # Bullets allow longer text than step titles; keep the slide as bullets.
+        return None
     return slide.model_copy(update={"components": [ProcessData(steps=steps)]})
 
 
@@ -50,15 +56,19 @@ def _icon_list_from_bullets(slide: SlideIR) -> SlideIR | None:
     if len(blocks) != 1 or len(blocks[0].items) < 2:
         return None
     items = []
-    for index, point in enumerate(blocks[0].items):
-        title, separator, description = point.text.partition(":")
-        items.append(
-            IconListItem(
-                icon=_ICONS[index % len(_ICONS)],
-                title=title.strip(" *") if separator else point.text.strip(" *"),
-                description=description.strip() if separator else "",
+    try:
+        for index, point in enumerate(blocks[0].items):
+            title, separator, description = point.text.partition(":")
+            items.append(
+                IconListItem(
+                    icon=_ICONS[index % len(_ICONS)],
+                    title=title.strip(" *") if separator else point.text.strip(" *"),
+                    description=description.strip() if separator else "",
+                )
             )
-        )
+    except ValidationError:
+        # Bullets allow longer text than icon titles; keep the slide as bullets.
+        return None
     return slide.model_copy(update={"components": [IconListData(items=items)]})
 
 
