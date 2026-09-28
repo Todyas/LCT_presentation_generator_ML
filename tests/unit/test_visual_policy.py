@@ -18,14 +18,19 @@ def _slide(index: int) -> SlideIR:
         title=TitleComponent(text=f"Вывод {index}"),
         components=[
             BulletBlock(
-                items=[BulletItem(text="Скорость: меньше ручных действий"), BulletItem(text="Контроль: единые правила")]
+                items=[
+                    BulletItem(text="Скорость: меньше ручных действий"),
+                    BulletItem(text="Контроль: единые правила"),
+                ]
             )
         ],
     )
 
 
 def test_visual_policy_breaks_three_slide_text_streak_without_new_facts():
-    ir = PresentationIR(variant="A", template_source_hash="x", slides=[_slide(i) for i in range(10)])
+    ir = PresentationIR(
+        variant="A", template_source_hash="x", slides=[_slide(i) for i in range(10)]
+    )
 
     diversified = apply_visual_policy(ir)
 
