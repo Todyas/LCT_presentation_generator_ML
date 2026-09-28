@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.core.agents.prompt_registry import PromptRegistry
-from app.core.agents.slot_filler import SlotFillError, fill_slide
+from app.core.agents.slot_filler import SlotFillError, build_fallback_slide, fill_slide
 from app.models.outline import OutlineItem
 from app.models.presentation_ir import BulletBlock, BulletItem, SlideIR, TitleComponent
 from app.models.template_manifest import (
@@ -148,3 +148,21 @@ async def test_resolved_layout_overrides_suggested_layout():
     )
 
     assert result.layout_type == LayoutType.CONTENT_1COL
+
+
+def test_fallback_slide_uses_only_outline_content_and_preserves_index():
+    item = OutlineItem(
+        slide_index=7,
+        working_title="Grounded title",
+        key_message="one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen",
+        suggested_layout_type=LayoutType.KPI_DASHBOARD,
+        content_hint="Distinct source detail",
+    )
+
+    slide = build_fallback_slide(item, _manifest(LayoutType.CONTENT_1COL))
+
+    assert slide.slide_index == 7
+    assert slide.layout_type == LayoutType.CONTENT_1COL
+    assert slide.title.text == "Grounded title"
+    assert len(slide.components[0].items[0].text.split()) == 15
+    assert slide.components[0].items[1].text == "Distinct source detail"

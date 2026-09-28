@@ -13,7 +13,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  REGISTRY_IMAGE: ghcr.io/todyas/lct_presentation_generator_ml
+  BACKEND_REGISTRY_IMAGE: ghcr.io/todyas/lct_presentation_generator_ml
+  FRONTEND_REGISTRY_IMAGE: ghcr.io/todyas/lct_presentation_generator_frontend
 
 jobs:
   checks:
@@ -42,8 +43,17 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           tags: |
-            ${{ env.REGISTRY_IMAGE }}:${{ github.sha }}
-            ${{ env.REGISTRY_IMAGE }}:main
+            ${{ env.BACKEND_REGISTRY_IMAGE }}:${{ github.sha }}
+            ${{ env.BACKEND_REGISTRY_IMAGE }}:main
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+          tags: |
+            ${{ env.FRONTEND_REGISTRY_IMAGE }}:${{ github.sha }}
+            ${{ env.FRONTEND_REGISTRY_IMAGE }}:main
 
   deploy:
     if: vars.ENABLE_DEPLOY == 'true'
@@ -85,7 +95,8 @@ jobs:
               "$DEPLOY_USER@$DEPLOY_HOST" \
               "tar -xf - -C $(printf '%q' "$DEPLOY_PATH")"
           printf -v remote_command \
-            'cd %q && ./scripts/deploy.sh %q %q' \
-            "$DEPLOY_PATH" "$REGISTRY_IMAGE" "$IMAGE_TAG"
+            'cd %q && ./scripts/deploy.sh %q %q %q' \
+            "$DEPLOY_PATH" "$BACKEND_REGISTRY_IMAGE" \
+            "$FRONTEND_REGISTRY_IMAGE" "$IMAGE_TAG"
           ssh -o BatchMode=yes -p "$DEPLOY_PORT" \
             "$DEPLOY_USER@$DEPLOY_HOST" "$remote_command"

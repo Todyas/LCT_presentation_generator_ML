@@ -14,3 +14,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(router)
+# Keep direct/internal endpoints backward compatible while also accepting the
+# prefix preserved by the external Nginx `location /api/` proxy.
+app.include_router(router, prefix="/api")

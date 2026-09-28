@@ -13,7 +13,7 @@ import {
   type TemplateDna,
 } from "./normalize";
 
-export const API_BASE = (import.meta.env.VITE_API_BASE || "https://lct.shmyaks.ru/api/").replace(/\/$/, "");
+export const API_BASE = (import.meta.env.VITE_API_BASE || "/api").replace(/\/$/, "");
 
 const TERMINAL: JobState[] = ["DONE", "PARTIAL", "FAILED"];
 

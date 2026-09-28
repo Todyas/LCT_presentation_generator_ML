@@ -13,7 +13,7 @@ from app.core.agents.llm_client import LLMClient
 from app.core.agents.narrative_architect import build_outline
 from app.core.agents.prompt_registry import PromptRegistry
 from app.core.agents.slide_reviser import revise_slide
-from app.core.agents.slot_filler import SlotFillError, fill_slide
+from app.core.agents.slot_filler import build_fallback_slide, fill_slide
 from app.core.auditor.audit_runner import run_full_audit
 from app.core.builder.pptx_builder import PptxBuilder
 from app.core.exporter.html_exporter import export_html_viewer
@@ -160,11 +160,14 @@ async def _build_variant(
 
         slides = []
         for item, res in zip(outline.items, fill_results):
-            if isinstance(res, SlotFillError):
-                logger.warning("dropping slide %s: %s", item.slide_index, res)
-                continue
             if isinstance(res, Exception):
-                raise res
+                logger.warning(
+                    "using deterministic fallback for slide %s after fill failure: %s",
+                    item.slide_index,
+                    res,
+                )
+                slides.append(build_fallback_slide(item, manifest))
+                continue
             slides.append(res)
 
         if len(slides) < deps.settings.n_slides_min:

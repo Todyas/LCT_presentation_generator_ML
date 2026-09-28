@@ -38,3 +38,4 @@ jobs:
       - uses: actions/checkout@v4
       - run: docker compose config -q
       - run: docker build --tag slideops-backend:ci .
+      - run: docker build --tag slideops-frontend:ci ./frontend

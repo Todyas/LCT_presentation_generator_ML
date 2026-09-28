@@ -7,7 +7,13 @@ from app.core.agents.llm_client import LLMClient
 from app.core.agents.narrative_architect import VARIANT_DESCRIPTIONS
 from app.core.agents.prompt_registry import PromptRegistry
 from app.models.outline import OutlineItem
-from app.models.presentation_ir import BulletBlock, MetricCard, SlideIR
+from app.models.presentation_ir import (
+    BulletBlock,
+    BulletItem,
+    MetricCard,
+    SlideIR,
+    TitleComponent,
+)
 from app.models.template_manifest import LayoutType, TemplateManifest
 
 
@@ -30,6 +36,31 @@ _ALLOWED_COMPONENTS_BY_LAYOUT: dict[LayoutType, list[str]] = {
     LayoutType.COMPARISON: ["table", "bullet_block"],
 }
 _DEFAULT_ALLOWED_COMPONENTS = ["bullet_block"]
+
+
+def _short_source_text(value: str, max_words: int = 15) -> str:
+    words = value.strip().split()
+    return " ".join(words[:max_words])
+
+
+def build_fallback_slide(item: OutlineItem, manifest: TemplateManifest) -> SlideIR:
+    """Build a source-only slide when the per-slide LLM exhausts its retries."""
+    resolved_layout = manifest.find_layout_or_fallback(
+        item.suggested_layout_type, item.slide_index
+    )
+    source_points: list[str] = []
+    for candidate in (item.key_message, item.content_hint):
+        point = _short_source_text(candidate)
+        if point and point.casefold() not in {value.casefold() for value in source_points}:
+            source_points.append(point)
+    return SlideIR(
+        slide_index=item.slide_index,
+        layout_type=resolved_layout.layout_type,
+        title=TitleComponent(text=item.working_title, is_action_title=True),
+        components=[
+            BulletBlock(items=[BulletItem(text=point) for point in source_points])
+        ],
+    )
 
 
 def _slide_quality_problems(slide: SlideIR, requested_layout: LayoutType) -> list[str]:
@@ -109,7 +140,12 @@ async def fill_slide(
             )
             if quality_problems:
                 raise ValueError("; ".join(quality_problems))
-            return slide.model_copy(update={"layout_type": resolved_layout.layout_type})
+            return slide.model_copy(
+                update={
+                    "slide_index": item.slide_index,
+                    "layout_type": resolved_layout.layout_type,
+                }
+            )
         except (ValidationError, ValueError) as exc:
             last_error = exc
             retry_feedback = f"PREVIOUS ATTEMPT FAILED VALIDATION: {exc}\nFix the issue and try again."

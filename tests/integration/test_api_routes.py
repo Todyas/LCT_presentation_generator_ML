@@ -33,6 +33,13 @@ def _clear_job_store():
     routes.job_store.clear()
 
 
+def test_api_prefix_is_accepted_when_nginx_preserves_it():
+    response = client.get("/api/health")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
 def test_generate_rejects_invalid_pptx_upload():
     response = client.post(
         "/generate",

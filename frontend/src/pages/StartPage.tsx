@@ -323,7 +323,7 @@ export function StartPage() {
               ) : (
                 <p className="empty">
                   {parsing
-                    ? "Читаем шаблон через /templates/analyze."
+                    ? "Читаем шаблон через /api/templates/analyze."
                     : "Загрузите PPTX, чтобы увидеть цвета, шрифты и layout-паттерны."}
                 </p>
               )}

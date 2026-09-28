@@ -12,13 +12,19 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Swagger без внешнего Nginx: `http://127.0.0.1:1494/docs`.
+Frontend без внешнего Nginx: `http://127.0.0.1:5173`.
+Swagger: `http://127.0.0.1:1494/docs`; API доступен одновременно по
+`http://127.0.0.1:1494/...` и `http://127.0.0.1:1494/api/...`.
 
-Compose поднимает API, Celery worker, PostgreSQL и Redis. Миграции
+Compose поднимает frontend, API, Celery worker, PostgreSQL и Redis. Миграции
 Alembic выполняются отдельным одноразовым сервисом до старта API и worker.
 Сгенерированные PPTX/PDF/HTML/PNG лежат в общем persistent volume.
 API привязан только к `127.0.0.1:1494`; внешний Nginx должен проксировать на
 этот адрес.
+Frontend привязан к `127.0.0.1:${FRONTEND_PORT:-5173}`. Во внешнем Nginx
+`location /` направляется на frontend, а `location /api/` — на backend
+`127.0.0.1:1494`. Backend принимает `/api` независимо от того, сохраняет или
+срезает Nginx этот префикс.
 
 CI запускает lint, тесты, цикл Alembic upgrade/downgrade и Docker build. В
 `main` образ публикуется в GHCR с immutable tag равным commit SHA. Для deploy
@@ -55,7 +61,7 @@ echo "$GHCR_TOKEN" | docker login ghcr.io -u GITHUB_USER --password-stdin
 ### 1. Анализ Template DNA
 
 ```http
-POST /templates/analyze
+POST /api/templates/analyze
 Content-Type: multipart/form-data
 
 template=<pptx>
@@ -67,7 +73,7 @@ layout types и предварительный `match_score`.
 ### 2. Запуск генерации
 
 ```http
-POST /generate
+POST /api/generate
 Content-Type: multipart/form-data
 
 template=<pptx>
@@ -82,8 +88,8 @@ style=balanced
 
 Прогресс:
 
-- polling: `GET /jobs/{job_id}`;
-- SSE: `GET /jobs/{job_id}/events`.
+- polling: `GET /api/jobs/{job_id}`;
+- SSE: `GET /api/jobs/{job_id}/events`.
 
 Стадии: `analyzing_template`, `extracting_design_system`,
 `planning_structure`, `matching_layouts`, `building_variants`, `auditing`,
@@ -92,7 +98,7 @@ style=balanced
 ### 3. Экран результата
 
 ```http
-GET /jobs/{job_id}/result
+GET /api/jobs/{job_id}/result
 ```
 
 Ответ содержит Template DNA, варианты Executive/Analytical/Pitch, показатели
@@ -104,7 +110,7 @@ GET /jobs/{job_id}/result
 Номер слайда в URL — позиция от `1`.
 
 ```http
-POST /jobs/{job_id}/slides/{variant}/{slide_position}/revise
+POST /api/jobs/{job_id}/slides/{variant}/{slide_position}/revise
 Content-Type: application/json
 
 {
@@ -137,23 +143,23 @@ endpoint'ами, а его `output.parent_job_id` указывает на исх
 
 История и возврат к старой версии:
 
-- `GET /jobs/{job_id}/slides/{variant}/{position}/revisions`;
-- `GET /jobs/{job_id}/slides/{variant}/{position}/revisions/{revision_id}/preview`;
-- `POST /jobs/{job_id}/slides/{variant}/{position}/revisions/{revision_id}/activate`
+- `GET /api/jobs/{job_id}/slides/{variant}/{position}/revisions`;
+- `GET /api/jobs/{job_id}/slides/{variant}/{position}/revisions/{revision_id}/preview`;
+- `POST /api/jobs/{job_id}/slides/{variant}/{position}/revisions/{revision_id}/activate`
   с телом `{"base_revision": 2}` — также возвращает дочерний job.
 
 ### 5. Экспорт
 
-- `GET /jobs/{job_id}/files/{variant}/pptx`;
-- `GET /jobs/{job_id}/files/{variant}/pdf`;
-- `GET /jobs/{job_id}/files/{variant}/html`;
-- `GET /jobs/{job_id}/download` — общий ZIP.
+- `GET /api/jobs/{job_id}/files/{variant}/pptx`;
+- `GET /api/jobs/{job_id}/files/{variant}/pdf`;
+- `GET /api/jobs/{job_id}/files/{variant}/html`;
+- `GET /api/jobs/{job_id}/download` — общий ZIP.
 
 ## Эксплуатация
 
 - PostgreSQL — источник истины для jobs, результата pipeline и истории
   revisions; Redis используется как durable broker и для distributed lock.
-- `GET /health` — liveness, `GET /health/ready` проверяет PostgreSQL и Redis.
+- `GET /api/health` — liveness, `GET /api/health/ready` проверяет PostgreSQL и Redis.
 - Для локального unit/integration запуска `TASK_QUEUE_ENABLED=false` оставляет
   совместимый in-process fallback. В Compose он всегда `true`.
 

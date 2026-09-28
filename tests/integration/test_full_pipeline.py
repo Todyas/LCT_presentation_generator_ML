@@ -143,7 +143,7 @@ async def test_pipeline_completes_under_timeout(tmp_path):
     assert ("exporting", 90) in progress_events
 
 
-async def test_single_slide_failure_does_not_fail_variant(tmp_path):
+async def test_single_slide_failure_uses_fallback_without_losing_slide(tmp_path):
     template_path = _copy_template(tmp_path)
     deps = _deps()
 
@@ -167,10 +167,11 @@ async def test_single_slide_failure_does_not_fail_variant(tmp_path):
     variant_result = result.variants["A"]
     assert variant_result.error is None
     slide_count = len(list(Presentation(variant_result.pptx_path).slides))
-    assert slide_count == 12
+    assert slide_count == 13
+    assert len(variant_result.presentation_ir.slides) == 13
 
 
-async def test_variant_dropping_below_minimum_fails_only_that_variant(tmp_path):
+async def test_many_slide_fill_failures_use_fallback_and_keep_variant(tmp_path):
     template_path = _copy_template(tmp_path)
     deps = _deps()
 
@@ -191,6 +192,7 @@ async def test_variant_dropping_below_minimum_fails_only_that_variant(tmp_path):
             "A detailed corporate brief about our quarterly plan.", template_path, deps
         )
 
-    assert result.variants["B"].error is not None
+    assert result.variants["B"].error is None
+    assert len(result.variants["B"].presentation_ir.slides) == 13
     assert result.variants["A"].error is None
     assert result.variants["C"].error is None
