@@ -13,7 +13,9 @@ from app.core.auditor.density_audit import (
 )
 from app.core.auditor.geometry_audit import BBox, run_geometry_audit
 from app.core.auditor.semantic_audit import run_semantic_audit
+from app.core.auditor.visual_audit import run_visual_variety_audit
 from app.core.builder.pptx_builder import BuildResult
+from app.core.builder.shape_factory import _background_hex, _fill_hex
 from app.models.audit_report import AuditReport
 from app.models.presentation_ir import PresentationIR
 from app.models.template_manifest import TemplateManifest
@@ -41,18 +43,21 @@ async def run_full_audit(
             )
         )
 
-    for shape_id, hex_color in _iter_text_shape_colors(build_result, ir, manifest):
+    for slide_index, shape_id, hex_color, background, is_large in _iter_text_shape_colors(
+        build_result, ir, manifest
+    ):
         issue = run_contrast_audit(
             text_color_hex=hex_color,
-            bg_color_hex=manifest.colors.lt1,
-            is_large_text=False,
-            slide_index=0,
+            bg_color_hex=background,
+            is_large_text=is_large,
+            slide_index=slide_index,
             shape_id=shape_id,
         )
         if issue is not None:
             issues.append(issue)
 
     issues.extend(run_density_audit_on_ir(ir))
+    issues.extend(run_visual_variety_audit(ir))
     issues.extend(run_placeholder_text_audit(build_result.pptx_path))
     issues.extend(await run_semantic_audit(ir, brief, llm, registry, model))
 
@@ -61,13 +66,24 @@ async def run_full_audit(
 
 def _iter_text_shape_colors(
     build_result: BuildResult, ir: PresentationIR, manifest: TemplateManifest
-) -> Iterator[tuple[str, str]]:
+) -> Iterator[tuple[int, str, str, str, bool]]:
     prs = Presentation(build_result.pptx_path)
     default_color = manifest.colors.dk1
     for slide_index, slide in enumerate(prs.slides):
+        slide_background = _background_hex(
+            slide,
+            manifest.colors,
+            manifest.slide_width_emu,
+            manifest.slide_height_emu,
+        )
         for shape in slide.shapes:
             if not shape.has_text_frame:
                 continue
+            shape_background = (
+                _fill_hex(shape.fill, manifest.colors)
+                if hasattr(shape, "fill")
+                else None
+            ) or slide_background
             for paragraph in shape.text_frame.paragraphs:
                 for run in paragraph.runs:
                     if not run.text:
@@ -80,4 +96,12 @@ def _iter_text_shape_colors(
                             hex_color = str(color.rgb)
                         except AttributeError:
                             hex_color = default_color
-                    yield f"slide{slide_index}_shape{shape.shape_id}", hex_color
+                    size_pt = run.font.size.pt if run.font.size is not None else 12
+                    is_large = size_pt >= (14 if run.font.bold else 18)
+                    yield (
+                        slide_index,
+                        f"slide{slide_index}_shape{shape.shape_id}",
+                        hex_color,
+                        shape_background,
+                        is_large,
+                    )

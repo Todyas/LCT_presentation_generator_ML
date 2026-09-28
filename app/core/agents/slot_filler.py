@@ -10,7 +10,10 @@ from app.models.outline import OutlineItem
 from app.models.presentation_ir import (
     BulletBlock,
     BulletItem,
+    ComparisonData,
+    IconListData,
     MetricCard,
+    ProcessData,
     SlideIR,
     TitleComponent,
 )
@@ -28,12 +31,10 @@ _ALLOWED_COMPONENTS_BY_LAYOUT: dict[LayoutType, list[str]] = {
     LayoutType.TABLE_FOCUSED: ["table"],
     LayoutType.CHART_FOCUSED: ["chart"],
     LayoutType.KPI_DASHBOARD: ["metric_card"],
-    LayoutType.PROCESS_TIMELINE: ["bullet_block", "metric_card"],
-    # ImagePlaceholder is deliberately not offered yet: until the asset pipeline
-    # can resolve it to a real image, it would render as an empty grey rectangle.
-    LayoutType.CONTENT_1COL: ["bullet_block"],
-    LayoutType.CONTENT_2COL: ["bullet_block", "table", "chart"],
-    LayoutType.COMPARISON: ["table", "bullet_block"],
+    LayoutType.PROCESS_TIMELINE: ["process"],
+    LayoutType.CONTENT_1COL: ["bullet_block", "icon_list"],
+    LayoutType.CONTENT_2COL: ["bullet_block", "table", "chart", "comparison", "image"],
+    LayoutType.COMPARISON: ["comparison", "table", "bullet_block"],
 }
 _DEFAULT_ALLOWED_COMPONENTS = ["bullet_block"]
 
@@ -43,20 +44,39 @@ def _short_source_text(value: str, max_words: int = 15) -> str:
     return " ".join(words[:max_words])
 
 
+def _outline_action_title(item: OutlineItem) -> str:
+    candidate = item.key_message.strip()
+    if len(candidate) <= 120:
+        return candidate
+    words: list[str] = []
+    for word in candidate.split():
+        if len(" ".join([*words, word])) > 119:
+            break
+        words.append(word)
+    return " ".join(words).rstrip(".,;:") + "…"
+
+
 def build_fallback_slide(item: OutlineItem, manifest: TemplateManifest) -> SlideIR:
     """Build a source-only slide when the per-slide LLM exhausts its retries."""
     resolved_layout = manifest.find_layout_or_fallback(
         item.suggested_layout_type, item.slide_index
     )
+    title_text = _outline_action_title(item)
     source_points: list[str] = []
-    for candidate in (item.key_message, item.content_hint):
+    for candidate in (item.content_hint,):
         point = _short_source_text(candidate)
-        if point and point.casefold() not in {value.casefold() for value in source_points}:
+        if (
+            point
+            and point.casefold() != title_text.casefold()
+            and point.casefold() not in {value.casefold() for value in source_points}
+        ):
             source_points.append(point)
+    if not source_points:
+        source_points.append(_short_source_text(item.key_message))
     return SlideIR(
         slide_index=item.slide_index,
         layout_type=resolved_layout.layout_type,
-        title=TitleComponent(text=item.working_title, is_action_title=True),
+        title=TitleComponent(text=title_text, is_action_title=True),
         components=[
             BulletBlock(items=[BulletItem(text=point) for point in source_points])
         ],
@@ -67,13 +87,23 @@ def _slide_quality_problems(slide: SlideIR, requested_layout: LayoutType) -> lis
     problems: list[str] = []
     bullet_blocks = [c for c in slide.components if isinstance(c, BulletBlock)]
     metric_cards = [c for c in slide.components if isinstance(c, MetricCard)]
+    comparisons = [c for c in slide.components if isinstance(c, ComparisonData)]
+    processes = [c for c in slide.components if isinstance(c, ProcessData)]
+    icon_lists = [c for c in slide.components if isinstance(c, IconListData)]
     bullet_items = [item for block in bullet_blocks for item in block.items]
-    if requested_layout in {LayoutType.CONTENT_1COL, LayoutType.COMPARISON} and len(
-        bullet_items
-    ) < 2:
+    if requested_layout == LayoutType.CONTENT_1COL and len(bullet_items) < 2 and not icon_lists:
         problems.append("text slide needs at least two distinct supporting points")
-    if requested_layout == LayoutType.CONTENT_2COL and len(bullet_blocks) != 2:
-        problems.append("CONTENT_2COL requires exactly two bullet_block components")
+    if (
+        requested_layout == LayoutType.CONTENT_2COL
+        and len(bullet_blocks) != 2
+        and not any(
+            component.type in {"table", "chart", "comparison", "image"}
+            for component in slide.components
+        )
+    ):
+        problems.append(
+            "CONTENT_2COL requires two bullet blocks or one supported visual component"
+        )
     if requested_layout == LayoutType.KPI_DASHBOARD and len(metric_cards) < 3:
         problems.append("KPI_DASHBOARD requires at least three metric_card components")
     if requested_layout == LayoutType.CHART_FOCUSED and not any(
@@ -84,6 +114,10 @@ def _slide_quality_problems(slide: SlideIR, requested_layout: LayoutType) -> lis
         component.type == "table" for component in slide.components
     ):
         problems.append("TABLE_FOCUSED requires a table component")
+    if requested_layout == LayoutType.COMPARISON and not comparisons and len(bullet_blocks) != 2:
+        problems.append("COMPARISON requires a comparison component or two bullet blocks")
+    if requested_layout == LayoutType.PROCESS_TIMELINE and not processes:
+        problems.append("PROCESS_TIMELINE requires a process component")
     if any(item.text.lstrip("*").lower().startswith("тезис:") for item in bullet_items):
         problems.append("generic 'Тезис:' labels are forbidden")
     return problems
@@ -118,6 +152,7 @@ async def fill_slide(
             working_title=item.working_title,
             key_message=item.key_message,
             content_hint=item.content_hint,
+            requested_layout_type=item.suggested_layout_type.value,
             resolved_layout_type=resolved_layout.layout_type.value,
             allowed_component_types=", ".join(allowed_components),
             retry_feedback=retry_feedback,

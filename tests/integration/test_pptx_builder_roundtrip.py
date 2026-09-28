@@ -12,9 +12,14 @@ from app.models.presentation_ir import (
     BulletItem,
     ChartData,
     ChartSeries,
+    ComparisonData,
+    IconListData,
+    IconListItem,
     ImagePlaceholder,
     MetricCard,
     PresentationIR,
+    ProcessData,
+    ProcessStep,
     SlideIR,
     TableData,
     TitleComponent,
@@ -34,7 +39,7 @@ FIXTURE_PATH = "tests/fixtures/templates/generated_minimal.pptx"
 def _cache_path_for(pptx_path: str) -> Path:
     file_bytes = Path(pptx_path).read_bytes()
     source_hash = hashlib.sha256(file_bytes).hexdigest()
-    return Path(".cache") / f"{source_hash}.manifest.json"
+    return Path(".cache") / f"{source_hash}.v3.manifest.json"
 
 
 @pytest.fixture(autouse=True)
@@ -165,6 +170,60 @@ def test_image_placeholder_renders_even_without_picture_slot(tmp_path):
     reopened = Presentation(result.pptx_path)
     slide = reopened.slides[0]
     assert len(list(slide.shapes)) >= 2
+
+
+def test_semantic_visual_components_survive_pptx_roundtrip(tmp_path):
+    template_path = _copy_template(tmp_path)
+    manifest = TemplateParser().parse(template_path)
+    slides = [
+        SlideIR(
+            slide_index=0,
+            layout_type=LayoutType.COMPARISON,
+            title=_title("Процесс становится прозрачным"),
+            components=[
+                ComparisonData(
+                    left_title="До", left_items=["Ручная сборка"],
+                    right_title="После", right_items=["Единый конвейер"],
+                )
+            ],
+        ),
+        SlideIR(
+            slide_index=1,
+            layout_type=LayoutType.PROCESS_TIMELINE,
+            title=_title("Три этапа ведут к результату"),
+            components=[
+                ProcessData(
+                    steps=[
+                        ProcessStep(title="Сбор"),
+                        ProcessStep(title="Проверка"),
+                        ProcessStep(title="Экспорт"),
+                    ]
+                )
+            ],
+        ),
+        SlideIR(
+            slide_index=2,
+            layout_type=LayoutType.CONTENT_1COL,
+            title=_title("Ключевые свойства видны сразу"),
+            components=[
+                IconListData(
+                    items=[
+                        IconListItem(icon="speed", title="Скорость"),
+                        IconListItem(icon="shield", title="Контроль"),
+                    ]
+                )
+            ],
+        ),
+        *_filler_slides(3, 7),
+    ]
+    ir = PresentationIR(variant="A", template_source_hash=manifest.source_hash, slides=slides)
+
+    result = PptxBuilder().build(template_path, manifest, ir)
+    reopened = Presentation(result.pptx_path)
+
+    assert len(reopened.slides) == 10
+    assert len(reopened.slides[0].shapes) >= 6
+    assert len(reopened.slides[1].shapes) >= 7
 
 
 def test_duplicate_component_types_do_not_collide(tmp_path):

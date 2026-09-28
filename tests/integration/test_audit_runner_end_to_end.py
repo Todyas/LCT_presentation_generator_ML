@@ -27,7 +27,7 @@ FIXTURE_PATH = "tests/fixtures/templates/generated_minimal.pptx"
 def _cache_path_for(pptx_path: str) -> Path:
     file_bytes = Path(pptx_path).read_bytes()
     source_hash = hashlib.sha256(file_bytes).hexdigest()
-    return Path(".cache") / f"{source_hash}.manifest.json"
+    return Path(".cache") / f"{source_hash}.v3.manifest.json"
 
 
 @pytest.fixture(autouse=True)
@@ -81,7 +81,7 @@ async def test_clean_deck_passes(tmp_path):
     )
 
     assert report.passed is True
-    assert report.issues == []
+    assert {issue.issue_type for issue in report.issues} == {IssueType.VISUAL_MONOTONY}
 
 
 async def test_dirty_deck_flags_multiple_issue_types(tmp_path):

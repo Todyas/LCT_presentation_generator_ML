@@ -127,13 +127,14 @@ export function ResultPage() {
   async function changeSlide(selection: FixSelection) {
     if (!slide) throw new Error("Слайд не выбран");
     const before = audit?.score ?? null;
-    await applySlideChange({
+    const updatedJob = await applySlideChange({
       jobId,
       variant,
       position: slide.position,
       revision: current?.revision ?? 1,
       body: { ...selection, regenerate: false },
     });
+    setJob(updatedJob);
     setReloadKey((value) => value + 1);
     const nextAudit = await getAudit(jobId, variant).catch(() => null);
     return { before, after: nextAudit?.score ?? null };
@@ -147,7 +148,7 @@ export function ResultPage() {
     setProgress(0);
     setLog(["queued"]);
     try {
-      await applySlideChange({
+      const updatedJob = await applySlideChange({
         jobId,
         variant,
         position: slide.position,
@@ -165,11 +166,13 @@ export function ResultPage() {
           if (update.job) remember(update.job.stage, update.job.progress);
         },
       });
+      setJob(updatedJob);
       setReloadKey((value) => value + 1);
       setToast(`Слайд ${String(slide.position).padStart(2, "0")} пересобран`);
-      setBusy(false);
     } catch (error) {
       setBusyError(error instanceof Error ? error.message : "Не удалось перегенерировать слайд");
+    } finally {
+      setBusy(false);
     }
   }
 

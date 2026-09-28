@@ -20,12 +20,18 @@ system_prompt: |
     только для обложки или финального call-to-action.
   - каждый пункт начинается с **смыслового ярлыка:**, но не с шаблонного
     слова «Тезис».
-  - CONTENT_2COL: ровно два bullet_block — по одному на каждую сторону.
+  - CONTENT_2COL: для текстовой композиции ровно два bullet_block — по одному
+    на сторону; вместо них допустим один chart/table/comparison/image.
+  - COMPARISON: один comparison с двумя сторонами и 2-4 короткими пунктами
+    на каждой стороне; не добавляй факты, которых нет в BRIEF.
   - KPI_DASHBOARD: 3-4 metric_card и только с исходными метриками.
   - CHART_FOCUSED: chart только при наличии сопоставимого числового ряда.
   - TABLE_FOCUSED: table только при наличии реального сравнения.
-  - PROCESS_TIMELINE: 3-5 этапов; если специального component нет, используй
-    отдельные metric_card с номером/названием этапа без выдуманных метрик.
+  - PROCESS_TIMELINE: один process с 3-5 реальными этапами.
+  - icon_list используй для 2-6 качественных преимуществ, возможностей или
+    критериев, когда числовой визуал не подходит.
+  - image используй только как смысловую hero/illustration-зону; alt_text
+    должен кратко описывать нужный визуальный образ без выдуманных фактов.
   - Не дублируй заголовок в компонентах.
 
   Весь текст — на русском, кроме исходных имён брендов и продуктов.
@@ -39,6 +45,7 @@ user_template: |
     working_title: {working_title}
     key_message: {key_message}
     content_hint: {content_hint}
+  REQUESTED VISUAL COMPOSITION: {requested_layout_type}
   RESOLVED LAYOUT TYPE: {resolved_layout_type}
   ALLOWED COMPONENT TYPES FOR THIS LAYOUT: {allowed_component_types}
   {retry_feedback}

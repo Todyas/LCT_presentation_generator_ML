@@ -14,6 +14,7 @@ from app.core.agents.narrative_architect import build_outline
 from app.core.agents.prompt_registry import PromptRegistry
 from app.core.agents.slide_reviser import revise_slide
 from app.core.agents.slot_filler import build_fallback_slide, fill_slide
+from app.core.agents.visual_policy import apply_visual_policy
 from app.core.auditor.audit_runner import run_full_audit
 from app.core.builder.pptx_builder import PptxBuilder
 from app.core.exporter.html_exporter import export_html_viewer
@@ -179,6 +180,7 @@ async def _build_variant(
         ir = PresentationIR(
             variant=variant, template_source_hash=manifest.source_hash, slides=slides
         )
+        ir = apply_visual_policy(ir)
 
         if progress_callback:
             progress_callback("building_variants", 60)
@@ -296,6 +298,7 @@ async def rebuild_variant_with_slide(
     slides[slide_position - 1] = replacement_slide.model_copy(
         update={"slide_index": slides[slide_position - 1].slide_index}
     )
+    # A slide-level revision must not silently rewrite neighbouring slides.
     revised_ir = ir.model_copy(update={"slides": slides})
 
     build_result = deps.builder.build(template_path, manifest, revised_ir)

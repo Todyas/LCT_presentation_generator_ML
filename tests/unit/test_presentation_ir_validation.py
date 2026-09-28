@@ -6,7 +6,12 @@ from app.models.presentation_ir import (
     BulletItem,
     ChartData,
     ChartSeries,
+    ComparisonData,
+    IconListData,
+    IconListItem,
     PresentationIR,
+    ProcessData,
+    ProcessStep,
     SlideIR,
     TableData,
     TitleComponent,
@@ -53,6 +58,26 @@ def test_chart_data_rejects_series_length_mismatch():
 def test_table_data_rejects_row_with_wrong_cell_count():
     with pytest.raises(ValidationError):
         TableData(headers=["a", "b", "c"], rows=[["1", "2"]])
+
+
+def test_semantic_visual_components_validate_their_minimum_structure():
+    comparison = ComparisonData(
+        left_title="До", left_items=["Ручная работа"],
+        right_title="После", right_items=["Единый процесс"],
+    )
+    process = ProcessData(
+        steps=[ProcessStep(title=value) for value in ("Ввод", "Проверка", "Экспорт")]
+    )
+    icon_list = IconListData(
+        items=[
+            IconListItem(icon="speed", title="Быстрее"),
+            IconListItem(icon="shield", title="Надёжнее"),
+        ]
+    )
+
+    assert comparison.type == "comparison"
+    assert len(process.steps) == 3
+    assert icon_list.items[1].icon == "shield"
 
 
 def test_slide_ir_rejects_placeholder_title_case_insensitive():

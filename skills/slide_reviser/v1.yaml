@@ -11,6 +11,9 @@ system_prompt: |
   except proper product and brand names. Keep the slide concise: no more than
   6 bullets and no more than 15 words per bullet. The result must remain useful
   as a standalone slide and its title should communicate the main conclusion.
+  Prefer semantic visual components over plain bullets when the instruction asks
+  for a layout change or visual: comparison for two sides, process for ordered
+  stages, icon_list for qualitative benefits, chart/table only for grounded data.
 user_template: |
   ORIGINAL BRIEF:
   {brief}

@@ -89,8 +89,55 @@ class ImagePlaceholder(BaseModel):
     role: Literal["hero", "icon", "logo", "illustration"] = "illustration"
 
 
+class ComparisonData(BaseModel):
+    type: Literal["comparison"] = "comparison"
+    left_title: str = Field(min_length=1, max_length=60)
+    left_items: list[str] = Field(min_length=1, max_length=5)
+    right_title: str = Field(min_length=1, max_length=60)
+    right_items: list[str] = Field(min_length=1, max_length=5)
+
+    @field_validator("left_items", "right_items")
+    @classmethod
+    def concise_items(cls, values: list[str]) -> list[str]:
+        cleaned = []
+        for value in values:
+            text = value.strip()
+            if not text or len(text.split()) > MAX_WORDS_PER_BULLET:
+                raise ValueError("comparison items must contain 1-15 words")
+            cleaned.append(text)
+        return cleaned
+
+
+class ProcessStep(BaseModel):
+    title: str = Field(min_length=1, max_length=50)
+    description: str = Field(default="", max_length=120)
+
+
+class ProcessData(BaseModel):
+    type: Literal["process"] = "process"
+    steps: list[ProcessStep] = Field(min_length=3, max_length=6)
+
+
+class IconListItem(BaseModel):
+    icon: Literal["check", "shield", "speed", "people", "cloud", "gear", "chart", "star"] = "check"
+    title: str = Field(min_length=1, max_length=60)
+    description: str = Field(default="", max_length=140)
+
+
+class IconListData(BaseModel):
+    type: Literal["icon_list"] = "icon_list"
+    items: list[IconListItem] = Field(min_length=2, max_length=6)
+
+
 SlideComponent = Annotated[
-    BulletBlock | MetricCard | ChartData | TableData | ImagePlaceholder,
+    BulletBlock
+    | MetricCard
+    | ChartData
+    | TableData
+    | ImagePlaceholder
+    | ComparisonData
+    | ProcessData
+    | IconListData,
     Field(discriminator="type"),
 ]
 

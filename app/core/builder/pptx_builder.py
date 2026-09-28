@@ -8,23 +8,29 @@ from pptx.presentation import Presentation as PptxPresentation
 from pptx.shapes.base import BaseShape
 from pptx.slide import Slide, SlideLayout
 
-from app.core.builder.autofit import apply_autofit_to_text_frame
 from app.core.builder.shape_factory import (
     BBox,
     render_bullet_component,
     render_chart_component,
+    render_comparison,
+    render_icon_list,
     render_image_placeholder,
     render_metric_card_group,
+    render_process,
     render_table_component,
+    render_title_component,
 )
 from app.core.parser.font_resolver import resolve_font_path
 from app.core.parser.template_parser import _PLACEHOLDER_TYPE_MAP
 from app.models.presentation_ir import (
     BulletBlock,
     ChartData,
+    ComparisonData,
+    IconListData,
     ImagePlaceholder,
     MetricCard,
     PresentationIR,
+    ProcessData,
     SlideComponent,
     TableData,
 )
@@ -56,6 +62,9 @@ _COMPONENT_TO_PLACEHOLDER_TYPE: dict[type, PlaceholderType] = {
     TableData: PlaceholderType.TABLE,
     ChartData: PlaceholderType.CHART,
     ImagePlaceholder: PlaceholderType.PICTURE,
+    ComparisonData: PlaceholderType.BODY,
+    ProcessData: PlaceholderType.BODY,
+    IconListData: PlaceholderType.BODY,
 }
 
 # footer/date/slide-number chrome usually spans the full canvas width regardless of the
@@ -107,27 +116,58 @@ class PptxBuilder:
             font_path = resolve_font_path(manifest.fonts.minor_latin)
 
             title_placeholder = self._find_placeholder(slide, PlaceholderType.TITLE)
+            title_slot = layout.slot_by_type(PlaceholderType.TITLE)
             used_placeholder_idxs: set[int] = set()
-            if title_placeholder is not None:
-                title_placeholder.text_frame.text = slide_ir.title.text
-                title_slot = layout.slot_by_type(PlaceholderType.TITLE)
-                if title_slot is not None:
-                    apply_autofit_to_text_frame(
-                        title_placeholder.text_frame,
-                        title_slot.geometry,
-                        font_path,
-                        max_size_pt=32,
-                        line_spacing=1.35,
+            if title_placeholder is not None or title_slot is not None:
+                title_geometry = (
+                    title_slot.geometry
+                    if title_slot is not None
+                    else Geometry(
+                        left_emu=title_placeholder.left,
+                        top_emu=title_placeholder.top,
+                        width_emu=title_placeholder.width,
+                        height_emu=title_placeholder.height,
                     )
-                shape_boxes["title"] = BBox(
-                    title_placeholder.left, title_placeholder.top,
-                    title_placeholder.width, title_placeholder.height,
                 )
-                used_placeholder_idxs.add(title_placeholder.placeholder_format.idx)
+                shape_boxes["title"] = render_title_component(
+                    slide,
+                    title_geometry,
+                    slide_ir.title.text,
+                    title_placeholder,
+                    font_path,
+                    manifest.fonts.major_latin,
+                    manifest.colors,
+                    manifest.slide_width_emu,
+                    manifest.slide_height_emu,
+                    manifest.brand_profile.title_size_pt,
+                )
+                if title_placeholder is not None:
+                    used_placeholder_idxs.add(title_placeholder.placeholder_format.idx)
+                elif title_slot is not None:
+                    used_placeholder_idxs.add(title_slot.placeholder_idx)
+            else:
+                title_geometry = Geometry(
+                    left_emu=int(prs.slide_width * 0.07),
+                    top_emu=int(prs.slide_height * 0.055),
+                    width_emu=int(prs.slide_width * 0.86),
+                    height_emu=int(prs.slide_height * 0.17),
+                )
+                shape_boxes["title"] = render_title_component(
+                    slide,
+                    title_geometry,
+                    slide_ir.title.text,
+                    None,
+                    font_path,
+                    manifest.fonts.major_latin,
+                    manifest.colors,
+                    manifest.slide_width_emu,
+                    manifest.slide_height_emu,
+                    manifest.brand_profile.title_size_pt,
+                )
 
             cursor_bottom_emu = (
-                title_placeholder.top + title_placeholder.height
-                if title_placeholder is not None
+                shape_boxes["title"].y + shape_boxes["title"].h
+                if "title" in shape_boxes
                 else 0
             )
 
@@ -148,7 +188,14 @@ class PptxBuilder:
                         used_placeholder_idxs.add(slot_used)
                     if placeholder_shape is not None:
                         self._remove_shape(placeholder_shape)
-                    boxes = render_metric_card_group(slide, geometry, group, manifest.colors, font_path)
+                    boxes = render_metric_card_group(
+                        slide,
+                        geometry,
+                        group,
+                        manifest.colors,
+                        font_path,
+                        manifest.fonts.minor_latin,
+                    )
                     for bbox in boxes:
                         shape_boxes[f"component_{component_index}"] = bbox
                         component_index += 1
@@ -171,6 +218,9 @@ class PptxBuilder:
                             font_path,
                             manifest.fonts.minor_latin,
                             manifest.colors,
+                            manifest.slide_width_emu,
+                            manifest.slide_height_emu,
+                            manifest.brand_profile.body_size_pt,
                         )
                         shape_boxes[f"component_{component_index}"] = bbox
                         component_index += 1
@@ -330,19 +380,65 @@ class PptxBuilder:
                 font_path,
                 manifest.fonts.minor_latin,
                 manifest.colors,
+                manifest.slide_width_emu,
+                manifest.slide_height_emu,
+                manifest.brand_profile.body_size_pt,
             )
         if isinstance(component, TableData):
             bbox = render_table_component(
-                slide, geometry, placeholder_shape, component, manifest.colors
+                slide,
+                geometry,
+                placeholder_shape,
+                component,
+                manifest.colors,
+                manifest.fonts.minor_latin,
             )
             if placeholder_shape is not None and not hasattr(placeholder_shape, "insert_table"):
                 self._remove_shape(placeholder_shape)
             return bbox
         if isinstance(component, ChartData):
-            bbox = render_chart_component(slide, geometry, placeholder_shape, component)
+            bbox = render_chart_component(
+                slide, geometry, placeholder_shape, component, manifest.colors
+            )
             if placeholder_shape is not None and not hasattr(placeholder_shape, "insert_chart"):
                 self._remove_shape(placeholder_shape)
             return bbox
+        if isinstance(component, ComparisonData):
+            if placeholder_shape is not None:
+                self._remove_shape(placeholder_shape)
+            return render_comparison(
+                slide,
+                geometry,
+                component,
+                manifest.colors,
+                manifest.fonts.minor_latin,
+                manifest.slide_width_emu,
+                manifest.slide_height_emu,
+            )
+        if isinstance(component, ProcessData):
+            if placeholder_shape is not None:
+                self._remove_shape(placeholder_shape)
+            return render_process(
+                slide,
+                geometry,
+                component,
+                manifest.colors,
+                manifest.fonts.minor_latin,
+                manifest.slide_width_emu,
+                manifest.slide_height_emu,
+            )
+        if isinstance(component, IconListData):
+            if placeholder_shape is not None:
+                self._remove_shape(placeholder_shape)
+            return render_icon_list(
+                slide,
+                geometry,
+                component,
+                manifest.colors,
+                manifest.fonts.minor_latin,
+                manifest.slide_width_emu,
+                manifest.slide_height_emu,
+            )
         if isinstance(component, ImagePlaceholder):
             bbox = render_image_placeholder(slide, geometry, component.alt_text, manifest.colors)
             if placeholder_shape is not None:

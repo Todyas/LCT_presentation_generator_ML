@@ -142,7 +142,7 @@ export function normalizeDna(payload: unknown, fallbackName = ""): TemplateDna {
     masters: pickNumber(source, ["masters", "master_count", "masterCount", "n_masters"]),
     colors: pickList(source, ["colors", "palette", "color_palette"], colorText).map(normalizeColor),
     fonts: pickList(source, ["fonts", "font_families", "typefaces"], namedText),
-    patterns: pickList(source, ["patterns", "layouts_used", "layout_patterns", "layout_names"], namedText),
+    patterns: pickList(source, ["patterns", "layouts_used", "layout_patterns", "layout_names", "layout_types"], namedText),
     score: pickNumber(source, ["score", "template_match", "template_match_score", "match_score"]),
   };
 }
@@ -155,7 +155,7 @@ function slideFrom(item: unknown, index: number): DeckSlide | null {
   return {
     position,
     title: pickString(record, ["title", "name", "headline"]) || `Слайд ${String(position).padStart(2, "0")}`,
-    type: pickString(record, ["type", "layout", "kind", "role", "pattern"]),
+    type: pickString(record, ["type", "layout_type", "layout", "kind", "role", "pattern"]),
   };
 }
 

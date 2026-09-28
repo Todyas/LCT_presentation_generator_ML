@@ -62,11 +62,17 @@ def _outline_item(index: int) -> OutlineItem:
         "risk",
         "decision",
     ]
+    layouts = {
+        2: LayoutType.CONTENT_2COL,
+        4: LayoutType.COMPARISON,
+        5: LayoutType.PROCESS_TIMELINE,
+        8: LayoutType.CONTENT_2COL,
+    }
     return OutlineItem(
         slide_index=index,
         working_title=f"Slide {index}",
         key_message=f"Distinct {purposes[index]} message",
-        suggested_layout_type=LayoutType.CONTENT_1COL,
+        suggested_layout_type=layouts.get(index, LayoutType.CONTENT_1COL),
         content_hint=f"Content hint {index}",
     )
 

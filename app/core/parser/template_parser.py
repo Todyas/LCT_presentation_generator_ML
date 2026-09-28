@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import logging
 import zipfile
+from collections import Counter
 from pathlib import Path
+from statistics import median
 
 from pptx import Presentation
 from pptx.enum.shapes import PP_PLACEHOLDER
@@ -11,6 +13,7 @@ from pptx.enum.shapes import PP_PLACEHOLDER
 from app.core.parser.layout_classifier import classify_layout
 from app.core.parser.theme_extractor import extract_font_scheme, extract_theme_colors
 from app.models.template_manifest import (
+    BrandProfile,
     FontScheme,
     Geometry,
     LayoutManifest,
@@ -45,6 +48,123 @@ _PLACEHOLDER_TYPE_MAP: dict[int, PlaceholderType] = {
 
 class TemplateParseError(Exception):
     pass
+
+
+def _direct_rgb(color) -> str | None:
+    try:
+        return str(color.rgb) if color.rgb is not None else None
+    except (AttributeError, ValueError):
+        return None
+
+
+def _extract_brand_profile(prs: Presentation) -> BrandProfile:
+    title_sizes: list[float] = []
+    body_sizes: list[float] = []
+    colors: Counter[str] = Counter()
+    owners = [
+        *prs.slide_masters,
+        *(layout for master in prs.slide_masters for layout in master.slide_layouts),
+        *prs.slides,
+    ]
+    for owner in owners:
+        for shape in owner.shapes:
+            if hasattr(shape, "fill"):
+                try:
+                    color = _direct_rgb(shape.fill.fore_color)
+                except (AttributeError, TypeError, ValueError):
+                    color = None
+                if color:
+                    colors[color] += 1
+            if not getattr(shape, "has_text_frame", False):
+                continue
+            is_title_region = shape.top < prs.slide_height * 0.3
+            for paragraph in shape.text_frame.paragraphs:
+                for run in paragraph.runs:
+                    if run.font.size is None:
+                        continue
+                    target = title_sizes if is_title_region else body_sizes
+                    target.append(run.font.size.pt)
+                    text_color = _direct_rgb(run.font.color)
+                    if text_color:
+                        colors[text_color] += 1
+    title_candidates = [size for size in title_sizes if size >= 18]
+    title_size = (
+        max(18, min(54, median(title_candidates))) if title_candidates else 32
+    )
+    body_size = max(10, min(32, median(body_sizes))) if body_sizes else 20
+    return BrandProfile(
+        title_size_pt=title_size,
+        body_size_pt=body_size,
+        sampled_colors=[color for color, _ in colors.most_common(12)],
+    )
+
+
+def _inferred_slots(
+    owner,
+    slide_width: int,
+    slide_height: int,
+    id_offset: int = 0,
+    include_text_content: bool = False,
+) -> list[LayoutSlot]:
+    """Infer editable content regions from ordinary template shapes.
+
+    Many corporate decks use styled text boxes instead of PowerPoint
+    placeholders.  Treat those boxes as semantic slots while keeping their
+    geometry separate from the decorative master artwork.
+    """
+
+    result: list[LayoutSlot] = []
+    for shape in owner.shapes:
+        if getattr(shape, "is_placeholder", False):
+            continue
+        has_chart = bool(getattr(shape, "has_chart", False))
+        has_table = bool(getattr(shape, "has_table", False))
+        has_text = bool(getattr(shape, "has_text_frame", False))
+        if not (has_chart or has_table or has_text):
+            continue
+        left, top, width, height = shape.left, shape.top, shape.width, shape.height
+        if width <= 0 or height <= 0:
+            continue
+        normalized = NormalizedGeometry(
+            x=max(0.0, min(1.0, left / slide_width)),
+            y=max(0.0, min(1.0, top / slide_height)),
+            w=max(0.001, min(1.0, width / slide_width)),
+            h=max(0.001, min(1.0, height / slide_height)),
+        )
+        area = normalized.w * normalized.h
+        if area < 0.008 or area > 0.82 or normalized.y > 0.9:
+            continue
+        text = shape.text_frame.text.strip().casefold() if has_text else ""
+        if text and not include_text_content and not (has_chart or has_table):
+            continue
+        name = (getattr(shape, "name", "") or "").casefold()
+        title_hint = any(token in f"{name} {text}" for token in ("title", "заголов", "header"))
+        is_title = title_hint or (normalized.y < 0.25 and normalized.h < 0.28)
+        slot_type = (
+            PlaceholderType.CHART
+            if has_chart
+            else PlaceholderType.TABLE
+            if has_table
+            else PlaceholderType.TITLE
+            if is_title
+            else PlaceholderType.BODY
+        )
+        result.append(
+            LayoutSlot(
+                placeholder_idx=-10_000 - id_offset - int(shape.shape_id),
+                placeholder_type=slot_type,
+                geometry=Geometry(
+                    left_emu=left,
+                    top_emu=top,
+                    width_emu=width,
+                    height_emu=height,
+                ),
+                normalized=normalized,
+                name=getattr(shape, "name", "") or "inferred content region",
+                inferred=True,
+            )
+        )
+    return result
 
 
 def _resolved_placeholder_box(placeholder, master) -> tuple[int, int, int, int] | None:
@@ -90,7 +210,7 @@ class TemplateParser:
         source_hash = hashlib.sha256(file_bytes).hexdigest()
 
         cache_dir = Path(".cache")
-        cache_path = cache_dir / f"{source_hash}.manifest.json"
+        cache_path = cache_dir / f"{source_hash}.v3.manifest.json"
         cache_writable = True
         try:
             cache_dir.mkdir(exist_ok=True)
@@ -113,8 +233,10 @@ class TemplateParser:
         colors = ThemeColors(**extract_theme_colors(theme_bytes))
         major_latin, minor_latin = extract_font_scheme(theme_bytes)
         fonts = FontScheme(major_latin=major_latin, minor_latin=minor_latin)
+        brand_profile = _extract_brand_profile(prs)
 
         layouts: list[LayoutManifest] = []
+        layout_index_by_partname: dict[str, int] = {}
         layout_index = 0
         # prs.slide_layouts only exposes the first slide master's layouts; a corporate
         # template's real content layouts often live on additional masters, so every
@@ -148,6 +270,11 @@ class TemplateParser:
                             name=placeholder.name,
                         )
                     )
+                existing_kinds = {slot.placeholder_type for slot in slots}
+                inferred = _inferred_slots(layout, prs.slide_width, prs.slide_height)
+                for slot in inferred:
+                    if slot.placeholder_type not in existing_kinds or slot.placeholder_type == PlaceholderType.BODY:
+                        slots.append(slot)
                 layout_type = classify_layout(layout.name, slots)
                 layouts.append(
                     LayoutManifest(
@@ -157,7 +284,36 @@ class TemplateParser:
                         slots=slots,
                     )
                 )
+                layout_index_by_partname[str(layout.part.partname)] = layout_index
                 layout_index += 1
+
+        # Finished example slides are valuable design references even when their
+        # layouts contain no formal placeholders.  Merge their text regions into
+        # the owning layout as inferred slots; the builder will reuse the geometry
+        # without copying example content into the generated deck.
+        for slide_number, slide in enumerate(prs.slides, start=1):
+            owner_index = layout_index_by_partname.get(str(slide.slide_layout.part.partname))
+            if owner_index is None:
+                continue
+            target = layouts[owner_index]
+            existing = target.slots
+            for slot in _inferred_slots(
+                slide,
+                prs.slide_width,
+                prs.slide_height,
+                slide_number * 1_000,
+                include_text_content=True,
+            ):
+                overlaps = any(
+                    abs(slot.normalized.x - current.normalized.x) < 0.025
+                    and abs(slot.normalized.y - current.normalized.y) < 0.025
+                    and abs(slot.normalized.w - current.normalized.w) < 0.04
+                    and abs(slot.normalized.h - current.normalized.h) < 0.04
+                    for current in existing
+                )
+                if not overlaps:
+                    existing.append(slot)
+            target.layout_type = classify_layout(target.layout_name, target.slots)
 
         manifest = TemplateManifest(
             source_hash=source_hash,
@@ -165,6 +321,7 @@ class TemplateParser:
             slide_height_emu=prs.slide_height,
             colors=colors,
             fonts=fonts,
+            brand_profile=brand_profile,
             layouts=layouts,
         )
 

@@ -33,6 +33,22 @@ _SUPPORTED_SEMANTIC_LAYOUTS = {
 }
 
 
+def _visual_structure_problems(outline: Outline) -> list[str]:
+    layout_types = [item.suggested_layout_type.value for item in outline.items]
+    problems: list[str] = []
+    if len(set(layout_types)) < 3:
+        problems.append("fewer than three distinct slide compositions")
+    if "COMPARISON" not in layout_types:
+        problems.append("missing a qualitative comparison slide")
+    if "PROCESS_TIMELINE" not in layout_types:
+        problems.append("missing a process or timeline slide")
+    for index in range(len(layout_types) - 2):
+        if layout_types[index : index + 3] == ["CONTENT_1COL"] * 3:
+            problems.append("three consecutive CONTENT_1COL slides")
+            break
+    return problems
+
+
 async def build_outline(
     brief: str,
     manifest: TemplateManifest,
@@ -90,6 +106,7 @@ async def build_outline(
         if duplicates:
             pairs = ", ".join(f"{a + 1}/{b + 1}" for a, b in duplicates[:5])
             problems.append(f"near-duplicate slide messages at positions: {pairs}")
+        problems.extend(_visual_structure_problems(outline))
         if not invented and (
             best_duplicate_count is None or len(duplicates) < best_duplicate_count
         ):

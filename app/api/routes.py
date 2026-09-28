@@ -185,7 +185,11 @@ async def analyze_template(
         layout for layout in manifest.layouts if layout.layout_type.value != "UNKNOWN"
     ]
     match_score = round(100 * len(known_layouts) / max(1, len(manifest.layouts)))
-    colors = list(dict.fromkeys(manifest.colors.model_dump().values()))
+    colors = list(
+        dict.fromkeys(
+            [*manifest.colors.model_dump().values(), *manifest.brand_profile.sampled_colors]
+        )
+    )
     fonts = list(dict.fromkeys(manifest.fonts.model_dump().values()))
     layout_types = sorted({layout.layout_type.value for layout in known_layouts})
     return JSONResponse(
@@ -200,6 +204,10 @@ async def analyze_template(
             "colors": colors,
             "fonts": fonts,
             "layout_types": layout_types,
+            "inferred_slot_count": sum(
+                slot.inferred for layout in manifest.layouts for slot in layout.slots
+            ),
+            "brand_profile": manifest.brand_profile.model_dump(mode="json"),
         }
     )
 
@@ -418,6 +426,7 @@ def _variant_payload(job_id: str, variant_result, manifest=None) -> dict:
                     "slide_index": slide.slide_index,
                     "title": slide.title.text,
                     "layout_type": slide.layout_type.value,
+                    "component_types": [component.type for component in slide.components],
                     "preview_url": (
                         f"/jobs/{job_id}/previews/{code}/{position}"
                         if position <= len(variant_result.preview_paths)
@@ -437,6 +446,7 @@ def _variant_payload(job_id: str, variant_result, manifest=None) -> dict:
     text_words = 0
     action_titles = 0
     data_components = 0
+    visual_components = 0
     component_count = 0
     if ir is not None:
         for slide in ir.slides:
@@ -448,13 +458,33 @@ def _variant_payload(job_id: str, variant_result, manifest=None) -> dict:
                     text_words += sum(
                         len(item.text.split()) for item in component.items
                     )
+                elif component.type == "comparison":
+                    text_words += len(component.left_title.split())
+                    text_words += len(component.right_title.split())
+                    text_words += sum(len(item.split()) for item in component.left_items)
+                    text_words += sum(len(item.split()) for item in component.right_items)
+                elif component.type == "process":
+                    text_words += sum(
+                        len(step.title.split()) + len(step.description.split())
+                        for step in component.steps
+                    )
+                elif component.type == "icon_list":
+                    text_words += sum(
+                        len(item.title.split()) + len(item.description.split())
+                        for item in component.items
+                    )
+                elif component.type == "metric_card":
+                    text_words += len(component.label.split()) + len(component.value.split())
                 if component.type in {"metric_card", "chart", "table"}:
                     data_components += 1
+                if component.type != "bullet_block":
+                    visual_components += 1
     slide_total = len(ir.slides) if ir is not None else 0
     metrics = {
         "text_density": min(100, round(100 * text_words / max(1, slide_total * 60))),
         "conclusions": round(100 * action_titles / max(1, slide_total)),
         "data": round(100 * data_components / max(1, component_count)),
+        "visuals": round(100 * visual_components / max(1, component_count)),
     }
     return {
         "code": code,
@@ -495,7 +525,14 @@ async def get_job_result(job_id: str) -> JSONResponse:
         ]
         template_dna = {
             "source_hash": manifest.source_hash,
-            "colors": list(dict.fromkeys(manifest.colors.model_dump().values())),
+            "colors": list(
+                dict.fromkeys(
+                    [
+                        *manifest.colors.model_dump().values(),
+                        *manifest.brand_profile.sampled_colors,
+                    ]
+                )
+            ),
             "fonts": list(dict.fromkeys(manifest.fonts.model_dump().values())),
             "layout_count": len(manifest.layouts),
             "match_score": round(
@@ -506,6 +543,10 @@ async def get_job_result(job_id: str) -> JSONResponse:
             "layout_types": sorted(
                 {layout.layout_type.value for layout in manifest.layouts}
             ),
+            "inferred_slot_count": sum(
+                slot.inferred for layout in manifest.layouts for slot in layout.slots
+            ),
+            "brand_profile": manifest.brand_profile.model_dump(mode="json"),
         }
     return JSONResponse(
         content={

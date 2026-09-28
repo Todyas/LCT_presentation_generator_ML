@@ -292,29 +292,33 @@ export async function applySlideChange(input: {
   onUpdate?: (update: { event?: JobEvent; job?: JobStatus }) => void;
   signal?: AbortSignal;
 }) {
-  const baseRevision = input.revision >= 1 ? input.revision : null;
-  const childId = await reviseSlide(input.jobId, input.variant, input.position, {
-    ...input.body,
-    base_revision: baseRevision,
-  });
-  const child = await waitForJob(childId, (update) => input.onUpdate?.(update), input.signal);
-  if (child.status === "FAILED") throw new ApiError(500, child.error || "Правка слайда не выполнилась");
+  let baseRevision = input.revision >= 1 ? input.revision : null;
 
-  const revisions = await listRevisionIds(input.jobId, input.variant, input.position);
-  const latest = revisions.at(-1);
-  if (!latest) return;
-  try {
-    const activateId = await activateRevision(
-      input.jobId,
-      input.variant,
-      input.position,
-      latest.id,
-      latest.revision ?? baseRevision,
-    );
-    const activated = await waitForJob(activateId, (update) => input.onUpdate?.(update), input.signal);
-    if (activated.status === "FAILED") throw new ApiError(500, activated.error || "Не удалось активировать ревизию");
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 404) return;
-    throw error;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const childId = await reviseSlide(input.jobId, input.variant, input.position, {
+        ...input.body,
+        base_revision: baseRevision,
+      });
+      const child = await waitForJob(childId, (update) => input.onUpdate?.(update), input.signal);
+      if (child.status === "FAILED") {
+        const message = child.error || "Правка слайда не выполнилась";
+        throw new ApiError(message.startsWith("revision conflict:") ? 409 : 500, message);
+      }
+
+      // The revision job already makes the generated slide active. Fetching the parent
+      // here keeps the next edit on the revision that the server has just committed.
+      return await getJob(input.jobId);
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.status !== 409 || attempt > 0) throw error;
+      const freshJob = await getJob(input.jobId);
+      const freshVariant = freshJob.variants.find(
+        (item) => item.variant.toUpperCase() === input.variant.toUpperCase(),
+      );
+      if (!freshVariant) throw error;
+      baseRevision = freshVariant.revision;
+    }
   }
+
+  throw new ApiError(409, "Слайд был изменён параллельно. Обновите страницу и повторите правку");
 }

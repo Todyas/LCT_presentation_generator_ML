@@ -66,7 +66,9 @@ class SlideRevisionRequest(BaseModel):
             instructions.append("Подбери другой подходящий макет из шаблона.")
         if self.add_visual:
             instructions.append(
-                "Добавь уместный график, схему или визуальный блок, если данные это позволяют."
+                "Добавь уместный визуальный компонент: comparison для двух сторон, "
+                "process для этапов, icon_list для качественных преимуществ, а график "
+                "или таблицу — только если в исходном брифе есть данные."
             )
         if self.regenerate:
             instructions.append(

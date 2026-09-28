@@ -6,7 +6,14 @@ from pydantic import ValidationError
 from app.core.agents.prompt_registry import PromptRegistry
 from app.core.agents.slot_filler import SlotFillError, build_fallback_slide, fill_slide
 from app.models.outline import OutlineItem
-from app.models.presentation_ir import BulletBlock, BulletItem, SlideIR, TitleComponent
+from app.models.presentation_ir import (
+    BulletBlock,
+    BulletItem,
+    ProcessData,
+    ProcessStep,
+    SlideIR,
+    TitleComponent,
+)
 from app.models.template_manifest import (
     FontScheme,
     Geometry,
@@ -133,7 +140,20 @@ async def test_resolved_layout_overrides_suggested_layout():
     manifest = _manifest(LayoutType.CONTENT_1COL)
     llm = AsyncMock()
     llm.complete_structured = AsyncMock(
-        return_value=_valid_slide(LayoutType.PROCESS_TIMELINE)
+        return_value=SlideIR(
+            slide_index=0,
+            layout_type=LayoutType.PROCESS_TIMELINE,
+            title=TitleComponent(text="A real title"),
+            components=[
+                ProcessData(
+                    steps=[
+                        ProcessStep(title="Collect"),
+                        ProcessStep(title="Review"),
+                        ProcessStep(title="Export"),
+                    ]
+                )
+            ],
+        )
     )
     registry = PromptRegistry("skills")
 
@@ -163,6 +183,6 @@ def test_fallback_slide_uses_only_outline_content_and_preserves_index():
 
     assert slide.slide_index == 7
     assert slide.layout_type == LayoutType.CONTENT_1COL
-    assert slide.title.text == "Grounded title"
-    assert len(slide.components[0].items[0].text.split()) == 15
-    assert slide.components[0].items[1].text == "Distinct source detail"
+    assert slide.title.text == item.key_message
+    assert slide.components[0].items[0].text == "Distinct source detail"
+    assert len(slide.components[0].items) == 1

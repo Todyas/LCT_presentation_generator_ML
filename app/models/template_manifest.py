@@ -61,6 +61,7 @@ class LayoutSlot(BaseModel):
     geometry: Geometry
     normalized: NormalizedGeometry
     name: str = ""
+    inferred: bool = False
 
 
 class LayoutManifest(BaseModel):
@@ -101,12 +102,19 @@ class FontScheme(BaseModel):
     minor_latin: str = "Calibri"
 
 
+class BrandProfile(BaseModel):
+    title_size_pt: float = Field(default=32, ge=16, le=54)
+    body_size_pt: float = Field(default=20, ge=10, le=32)
+    sampled_colors: list[str] = Field(default_factory=list, max_length=12)
+
+
 class TemplateManifest(BaseModel):
     source_hash: str
     slide_width_emu: int
     slide_height_emu: int
     colors: ThemeColors
     fonts: FontScheme
+    brand_profile: BrandProfile = Field(default_factory=BrandProfile)
     layouts: list[LayoutManifest]
 
     def find_layout(self, layout_type: LayoutType) -> LayoutManifest | None:

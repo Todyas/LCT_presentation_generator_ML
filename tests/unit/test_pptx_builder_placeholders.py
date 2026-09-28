@@ -24,7 +24,7 @@ FIXTURE_PATH = "tests/fixtures/templates/generated_minimal.pptx"
 def _cache_path_for(pptx_path: str) -> Path:
     file_bytes = Path(pptx_path).read_bytes()
     source_hash = hashlib.sha256(file_bytes).hexdigest()
-    return Path(".cache") / f"{source_hash}.manifest.json"
+    return Path(".cache") / f"{source_hash}.v3.manifest.json"
 
 
 @pytest.fixture(autouse=True)
