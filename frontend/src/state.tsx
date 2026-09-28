@@ -12,7 +12,7 @@ export type Session = {
   dna: TemplateDna | null;
 };
 
-const STORAGE_KEY = "slideops-session";
+const STORAGE_KEY = "shmyaks-session";
 
 function readSession(): Session | null {
   try {

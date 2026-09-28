@@ -294,19 +294,28 @@ export function ResultPage() {
 
             <div className="stage-bar">
               <div className="stage-nav">
-                <button type="button" className="btn btn--ghost" disabled={safeIndex === 0 || !slide} onClick={() => setIndex((value) => Math.max(0, value - 1))}>
-                  Предыдущий слайд
+                <button
+                  type="button"
+                  className="btn btn--ghost stage-nav__arrow"
+                  aria-label="Предыдущий слайд"
+                  title="Предыдущий слайд"
+                  disabled={safeIndex === 0 || !slide}
+                  onClick={() => setIndex((value) => Math.max(0, value - 1))}
+                >
+                  ←
                 </button>
-                <span>
+                <span className="stage-nav__counter">
                   {slide ? `${String(slide.position).padStart(2, "0")} / ${String(slides.length).padStart(2, "0")}` : "—"}
                 </span>
                 <button
                   type="button"
-                  className="btn btn--ghost"
+                  className="btn btn--ghost stage-nav__arrow"
+                  aria-label="Следующий слайд"
+                  title="Следующий слайд"
                   disabled={!slide || safeIndex >= slides.length - 1}
                   onClick={() => setIndex((value) => Math.min(slides.length - 1, value + 1))}
                 >
-                  Следующий слайд
+                  →
                 </button>
               </div>
               <div className="stage-actions">

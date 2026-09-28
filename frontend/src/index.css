@@ -296,8 +296,10 @@ p { line-height: 1.45; }
 .slide-sizer { width: min(98cqw, calc(98cqh * 16 / 9)); }
 .slide-sizer.is-regen .slide { animation: regen 0.7s ease; }
 .stage-bar { display: grid; gap: 8px; padding: 0 18px 12px; }
-.stage-nav, .stage-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.stage-nav span { color: var(--muted); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stage-nav { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.stage-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.stage-nav__counter { color: var(--muted); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 64px; text-align: center; }
+.stage-nav__arrow { min-width: 34px; padding: 6px 10px; font-size: 18px; line-height: 1; }
 .disclaimer { margin: 0; text-align: center; color: var(--muted); font-size: 12px; }
 
 .slide--live::before, .slide--live::after { display: none; }

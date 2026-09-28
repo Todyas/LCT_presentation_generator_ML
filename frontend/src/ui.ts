@@ -53,7 +53,7 @@ export function variantAudience(id: string) {
 export function projectTitle(brief: string) {
   const clean = brief.trim().replace(/\s+/g, " ");
   if (!clean) return "Новая презентация";
-  if (clean.includes("защиты сервиса")) return "Защита SlideOps";
+  if (clean.includes("защиты сервиса")) return "Защита Шмякс";
   return clean.length > 42 ? `${clean.slice(0, 42)}…` : clean;
 }
 

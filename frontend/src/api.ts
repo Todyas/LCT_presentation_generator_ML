@@ -13,7 +13,7 @@ import {
   type TemplateDna,
 } from "./normalize";
 
-export const API_BASE = (import.meta.env.VITE_API_BASE || "/api").replace(/\/$/, "");
+export const API_BASE = (import.meta.env.VITE_API_BASE || "https://lct.shmyaks.ru/api/").replace(/\/$/, "");
 
 const TERMINAL: JobState[] = ["DONE", "PARTIAL", "FAILED"];
 
@@ -134,7 +134,7 @@ export async function downloadVariantFile(jobId: string, variant: string, kind: 
   const blob = await response.blob();
   const disposition = response.headers.get("content-disposition") ?? "";
   const match = /filename\*?=(?:UTF-8''|"?)([^\";]+)/i.exec(disposition);
-  const filename = match ? decodeURIComponent(match[1].replace(/"/g, "")) : `slideops-${variant}.${kind}`;
+  const filename = match ? decodeURIComponent(match[1].replace(/"/g, "")) : `shmyaks-${variant}.${kind}`;
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;

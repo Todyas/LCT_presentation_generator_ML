@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { analyzeTemplate, checkHealth, startGeneration, waitForJob } from "../api";
+import { analyzeTemplate, startGeneration, waitForJob } from "../api";
 import { JobProgress } from "../components/JobProgress";
 import type { TemplateDna } from "../normalize";
 import { useSession } from "../state";
@@ -27,7 +27,6 @@ export function StartPage() {
       ? String(session.slideCount)
       : "12",
   );
-  const [online, setOnline] = useState<boolean | null>(null);
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState("");
   const [stage, setStage] = useState("queued");
@@ -39,12 +38,6 @@ export function StartPage() {
   const parsedSlideCount = Number(slideCount);
   const slideCountError = slideCountErrorFor(slideCount);
   const canRun = Boolean(file) && brief.trim().length >= 10 && !slideCountError && !parsing && !running;
-
-  useEffect(() => {
-    const controller = new AbortController();
-    checkHealth().then(setOnline).catch(() => setOnline(false));
-    return () => controller.abort();
-  }, []);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -135,17 +128,10 @@ export function StartPage() {
     <div className="start">
       <header className="topbar">
         <div className="brand">
-          <span className="logo" aria-hidden="true">
-            S
-          </span>
           <div>
-            <strong>SlideOps</strong>
-            <span>Template-aware presentation generator</span>
+            <strong>Шмякс</strong>
           </div>
         </div>
-        <span className={`demo-pill${online === false ? " is-off" : ""}`}>
-          {online == null ? "API…" : online ? "API online" : "API offline"}
-        </span>
       </header>
 
       <main className="start__main">
