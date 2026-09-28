@@ -47,10 +47,22 @@ def _manifest() -> TemplateManifest:
 
 
 def _outline_item(index: int) -> OutlineItem:
+    purposes = [
+        "context",
+        "audience",
+        "problem",
+        "cause",
+        "approach",
+        "process",
+        "architecture",
+        "benefit",
+        "risk",
+        "decision",
+    ]
     return OutlineItem(
         slide_index=index,
         working_title=f"Slide {index}",
-        key_message=f"Key message {index}",
+        key_message=f"Distinct {purposes[index]} message",
         suggested_layout_type=LayoutType.CONTENT_1COL,
         content_hint=f"Content hint {index}",
     )

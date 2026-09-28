@@ -59,13 +59,24 @@ def autofit_font_size(
     return best
 
 
-def apply_autofit_to_text_frame(text_frame: TextFrame, geometry: Geometry, font_path: str) -> None:
+def apply_autofit_to_text_frame(
+    text_frame: TextFrame,
+    geometry: Geometry,
+    font_path: str,
+    *,
+    min_size_pt: int = 10,
+    max_size_pt: int = 44,
+    line_spacing: float = 1.2,
+) -> None:
     paragraphs_text = [p.text for p in text_frame.paragraphs]
     size = autofit_font_size(
         paragraphs_text,
         box_width_emu=geometry.width_emu,
         box_height_emu=geometry.height_emu,
         font_path=font_path,
+        min_size_pt=min_size_pt,
+        max_size_pt=max_size_pt,
+        line_spacing=line_spacing,
     )
     for paragraph in text_frame.paragraphs:
         for run in paragraph.runs:

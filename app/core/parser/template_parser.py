@@ -44,6 +44,30 @@ class TemplateParseError(Exception):
     pass
 
 
+def _resolved_placeholder_box(placeholder, master) -> tuple[int, int, int, int] | None:
+    values = (placeholder.left, placeholder.top, placeholder.width, placeholder.height)
+    if None not in values:
+        return values
+    idx = placeholder.placeholder_format.idx
+    inherited = next(
+        (
+            candidate
+            for candidate in master.placeholders
+            if candidate.placeholder_format.idx == idx
+        ),
+        None,
+    )
+    if inherited is None:
+        return None
+    inherited_values = (
+        inherited.left,
+        inherited.top,
+        inherited.width,
+        inherited.height,
+    )
+    return inherited_values if None not in inherited_values else None
+
+
 def _map_placeholder_type(ph_type: int | None) -> PlaceholderType:
     if ph_type is None:
         return PlaceholderType.OTHER
@@ -72,7 +96,10 @@ class TemplateParser:
             cache_writable = False
 
         if cache_writable and cache_path.exists():
-            return TemplateManifest.model_validate_json(cache_path.read_text())
+            try:
+                return TemplateManifest.model_validate_json(cache_path.read_text())
+            except OSError:
+                logger.warning("cannot read template cache %s; reparsing", cache_path)
 
         try:
             prs = Presentation(pptx_path)
@@ -93,21 +120,21 @@ class TemplateParser:
             for layout in master.slide_layouts:
                 slots: list[LayoutSlot] = []
                 for placeholder in layout.placeholders:
-                    # layout-inherited geometry (left/top/width/height=None) isn't resolved by
-                    # python-pptx off the master; resolving it is out of scope for Sprint 1.
-                    if None in (placeholder.left, placeholder.top, placeholder.width, placeholder.height):
+                    resolved_box = _resolved_placeholder_box(placeholder, master)
+                    if resolved_box is None:
                         continue
+                    left, top, width, height = resolved_box
                     geometry = Geometry(
-                        left_emu=placeholder.left,
-                        top_emu=placeholder.top,
-                        width_emu=placeholder.width,
-                        height_emu=placeholder.height,
+                        left_emu=left,
+                        top_emu=top,
+                        width_emu=width,
+                        height_emu=height,
                     )
                     normalized = NormalizedGeometry(
-                        x=placeholder.left / prs.slide_width,
-                        y=placeholder.top / prs.slide_height,
-                        w=placeholder.width / prs.slide_width,
-                        h=placeholder.height / prs.slide_height,
+                        x=left / prs.slide_width,
+                        y=top / prs.slide_height,
+                        w=width / prs.slide_width,
+                        h=height / prs.slide_height,
                     )
                     slots.append(
                         LayoutSlot(
@@ -139,5 +166,8 @@ class TemplateParser:
         )
 
         if cache_writable:
-            cache_path.write_text(manifest.model_dump_json())
+            try:
+                cache_path.write_text(manifest.model_dump_json())
+            except OSError:
+                logger.warning("cannot write template cache %s; caching disabled", cache_path)
         return manifest

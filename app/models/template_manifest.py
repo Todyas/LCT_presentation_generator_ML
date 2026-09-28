@@ -128,6 +128,13 @@ class TemplateManifest(BaseModel):
         found = self.find_layout(layout_type)
         if found is not None and found.layout_type != LayoutType.TITLE_SLIDE:
             return found
+        # Semantic layouts such as KPI, chart, table, and timeline are often absent
+        # from corporate templates.  In that case a regular content canvas is much
+        # safer than a section divider whose title may live in the middle or bottom.
+        for preferred_type in (LayoutType.CONTENT_1COL, LayoutType.CONTENT_2COL):
+            preferred = self.find_layout(preferred_type)
+            if preferred is not None:
+                return preferred
         for l in self.layouts:
             if l.layout_type != LayoutType.TITLE_SLIDE and l.slot_by_type(PlaceholderType.BODY) is not None:
                 return l

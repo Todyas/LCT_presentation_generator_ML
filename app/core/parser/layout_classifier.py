@@ -3,11 +3,14 @@ from __future__ import annotations
 from app.models.template_manifest import LayoutSlot, LayoutType, PlaceholderType
 
 _NAME_RULES: list[tuple[tuple[str, ...], LayoutType]] = [
-    (("title", "титул"), LayoutType.TITLE_SLIDE),
+    (("title slide", "титульн"), LayoutType.TITLE_SLIDE),
     (("section", "раздел"), LayoutType.SECTION_HEADER),
     (("table", "таблиц"), LayoutType.TABLE_FOCUSED),
     (("chart", "график", "диаграмм"), LayoutType.CHART_FOCUSED),
     (("comparison", "сравнен"), LayoutType.COMPARISON),
+    (("kpi", "metric", "метрик", "показател"), LayoutType.KPI_DASHBOARD),
+    (("process", "timeline", "процесс", "этап", "таймлайн"), LayoutType.PROCESS_TIMELINE),
+    (("quote", "цитат"), LayoutType.QUOTE),
     (("two content", "2 колон", "two colum"), LayoutType.CONTENT_2COL),
     (("blank", "пуст"), LayoutType.BLANK),
 ]

@@ -113,7 +113,13 @@ class PptxBuilder:
                 title_placeholder.text_frame.text = slide_ir.title.text
                 title_slot = layout.slot_by_type(PlaceholderType.TITLE)
                 if title_slot is not None:
-                    apply_autofit_to_text_frame(title_placeholder.text_frame, title_slot.geometry, font_path)
+                    apply_autofit_to_text_frame(
+                        title_placeholder.text_frame,
+                        title_slot.geometry,
+                        font_path,
+                        max_size_pt=32,
+                        line_spacing=1.35,
+                    )
                 shape_boxes["title"] = BBox(
                     title_placeholder.left, title_placeholder.top,
                     title_placeholder.width, title_placeholder.height,
@@ -136,9 +142,13 @@ class PptxBuilder:
             component_index = 0
             for group in _group_components(slide_ir.components, pair_bullet_blocks):
                 if isinstance(group[0], MetricCard):
-                    geometry, _, _ = self._resolve_geometry(
+                    geometry, slot_used, placeholder_shape = self._resolve_geometry(
                         slide, group[0], layout, used_placeholder_idxs, prs, cursor_bottom_emu
                     )
+                    if slot_used is not None:
+                        used_placeholder_idxs.add(slot_used)
+                    if placeholder_shape is not None:
+                        self._remove_shape(placeholder_shape)
                     boxes = render_metric_card_group(slide, geometry, group, manifest.colors, font_path)
                     for bbox in boxes:
                         shape_boxes[f"component_{component_index}"] = bbox
@@ -155,7 +165,13 @@ class PptxBuilder:
                     )
                     for block, col_geometry in zip(group, self._split_into_columns(container_geometry)):
                         bbox = render_bullet_component(
-                            slide, col_geometry, None, block, font_path, manifest.fonts.minor_latin
+                            slide,
+                            col_geometry,
+                            None,
+                            block,
+                            font_path,
+                            manifest.fonts.minor_latin,
+                            manifest.colors,
                         )
                         shape_boxes[f"component_{component_index}"] = bbox
                         component_index += 1
@@ -241,6 +257,35 @@ class PptxBuilder:
                     placeholder_shape = self._find_placeholder_by_idx(slide, slot.placeholder_idx)
                     return slot.geometry, slot.placeholder_idx, placeholder_shape
 
+        # A native chart/table/card can be drawn inside a generic BODY placeholder.
+        # Reusing that full content region preserves the template's safe margins and
+        # avoids stacking a shallow fallback box immediately below the title.
+        body_slots = [
+            slot
+            for slot in layout.slots
+            if slot.placeholder_type == PlaceholderType.BODY
+            and slot.placeholder_idx not in used_placeholder_idxs
+        ]
+        if body_slots:
+            first = body_slots[0]
+            placeholder_shape = self._find_placeholder_by_idx(slide, first.placeholder_idx)
+            if wanted_type != PlaceholderType.BODY and len(body_slots) > 1:
+                left = min(slot.geometry.left_emu for slot in body_slots)
+                top = min(slot.geometry.top_emu for slot in body_slots)
+                right = max(slot.geometry.right_emu for slot in body_slots)
+                bottom = max(slot.geometry.bottom_emu for slot in body_slots)
+                return (
+                    Geometry(
+                        left_emu=left,
+                        top_emu=top,
+                        width_emu=right - left,
+                        height_emu=bottom - top,
+                    ),
+                    first.placeholder_idx,
+                    placeholder_shape,
+                )
+            return first.geometry, first.placeholder_idx, placeholder_shape
+
         return self._compute_fallback_geometry(layout, prs, cursor_bottom_emu), None, None
 
     def _compute_fallback_geometry(
@@ -273,12 +318,26 @@ class PptxBuilder:
     ) -> BBox:
         if isinstance(component, BulletBlock):
             return render_bullet_component(
-                slide, geometry, placeholder_shape, component, font_path, manifest.fonts.minor_latin
+                slide,
+                geometry,
+                placeholder_shape,
+                component,
+                font_path,
+                manifest.fonts.minor_latin,
+                manifest.colors,
             )
         if isinstance(component, TableData):
-            return render_table_component(slide, geometry, placeholder_shape, component)
+            bbox = render_table_component(
+                slide, geometry, placeholder_shape, component, manifest.colors
+            )
+            if placeholder_shape is not None and not hasattr(placeholder_shape, "insert_table"):
+                self._remove_shape(placeholder_shape)
+            return bbox
         if isinstance(component, ChartData):
-            return render_chart_component(slide, geometry, placeholder_shape, component)
+            bbox = render_chart_component(slide, geometry, placeholder_shape, component)
+            if placeholder_shape is not None and not hasattr(placeholder_shape, "insert_chart"):
+                self._remove_shape(placeholder_shape)
+            return bbox
         if isinstance(component, ImagePlaceholder):
             bbox = render_image_placeholder(slide, geometry, component.alt_text, manifest.colors)
             if placeholder_shape is not None:

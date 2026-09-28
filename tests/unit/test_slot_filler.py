@@ -65,7 +65,11 @@ def _valid_slide(layout_type: LayoutType) -> SlideIR:
         slide_index=0,
         layout_type=layout_type,
         title=TitleComponent(text="A real title"),
-        components=[BulletBlock(items=[BulletItem(text="one bullet")])],
+        components=[
+            BulletBlock(
+                items=[BulletItem(text="first point"), BulletItem(text="second point")]
+            )
+        ],
     )
 
 
@@ -125,11 +129,11 @@ async def test_exhausts_retries_raises_slot_fill_error():
 
 
 async def test_resolved_layout_overrides_suggested_layout():
-    item = _outline_item(LayoutType.TABLE_FOCUSED)
+    item = _outline_item(LayoutType.PROCESS_TIMELINE)
     manifest = _manifest(LayoutType.CONTENT_1COL)
     llm = AsyncMock()
     llm.complete_structured = AsyncMock(
-        return_value=_valid_slide(LayoutType.TABLE_FOCUSED)
+        return_value=_valid_slide(LayoutType.PROCESS_TIMELINE)
     )
     registry = PromptRegistry("skills")
 

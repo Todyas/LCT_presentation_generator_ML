@@ -25,6 +25,17 @@ def test_name_wins_over_geometry():
     assert result == LayoutType.TITLE_SLIDE
 
 
+def test_title_and_content_is_not_misclassified_as_cover():
+    slots = [
+        _slot(PlaceholderType.TITLE, 0.05, 0.9),
+        _slot(PlaceholderType.BODY, 0.05, 0.9),
+    ]
+
+    result = classify_layout("Title and Content", slots)
+
+    assert result == LayoutType.CONTENT_1COL
+
+
 def test_uninformative_name_falls_back_to_geometry_two_col():
     slots = [
         _slot(PlaceholderType.TITLE, 0.05, 0.9),

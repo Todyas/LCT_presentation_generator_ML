@@ -29,15 +29,32 @@ class FakeLLM:
         self, model, system_prompt, user_prompt, response_model, model_params
     ):
         if response_model is Outline:
+            purposes = [
+                "context",
+                "audience",
+                "problem",
+                "cause",
+                "approach",
+                "process",
+                "architecture",
+                "benefit",
+                "risk",
+                "control",
+                "adoption",
+                "roadmap",
+                "decision",
+                "ownership",
+                "next step",
+            ]
             return Outline(
                 variant="A",
                 items=[
                     OutlineItem(
                         slide_index=i,
-                        working_title=f"Slide {i}",
-                        key_message=f"Key message {i}",
+                        working_title=f"{purposes[i].title()} overview",
+                        key_message=f"Distinct {purposes[i]} message",
                         suggested_layout_type=LayoutType.CONTENT_1COL,
-                        content_hint=f"Content hint {i}",
+                        content_hint=f"Evidence for the {purposes[i]} section",
                     )
                     for i in range(self.n_items)
                 ],
@@ -52,7 +69,12 @@ class FakeLLM:
                 layout_type=LayoutType.CONTENT_1COL,
                 title=TitleComponent(text=f"Generated title {idx}"),
                 components=[
-                    BulletBlock(items=[BulletItem(text="A short bullet point.")])
+                    BulletBlock(
+                        items=[
+                            BulletItem(text="A short evidence point."),
+                            BulletItem(text="A distinct supporting point."),
+                        ]
+                    )
                 ],
             )
         if response_model is SemanticFindings:
