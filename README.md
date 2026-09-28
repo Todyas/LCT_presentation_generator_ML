@@ -23,8 +23,25 @@ API привязан только к `127.0.0.1:1494`; внешний Nginx до
 CI запускает lint, тесты, цикл Alembic upgrade/downgrade и Docker build. В
 `main` образ публикуется в GHCR с immutable tag равным commit SHA. Для deploy
 нужно создать GitHub Environment `production`, добавить secrets
-`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PATH`, `DEPLOY_SSH_KEY` и repository
-variable `ENABLE_DEPLOY=true`; сервер должен быть авторизован в GHCR.
+`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PATH`, `DEPLOY_SSH_KEY`,
+`DEPLOY_KNOWN_HOSTS` и repository variable `ENABLE_DEPLOY=true`.
+
+На сервере должны быть установлены Docker Engine и Compose v2. В `DEPLOY_PATH`
+должен лежать серверный `.env`, а deploy-user должен иметь доступ к Docker и
+запись в эту директорию. Workflow сам передаёт Compose-файл и deploy-скрипт по
+SSH. Если GHCR package приватный, один раз авторизуйте Docker на сервере
+токеном с `read:packages`:
+
+```bash
+echo "$GHCR_TOKEN" | docker login ghcr.io -u GITHUB_USER --password-stdin
+```
+
+Значение `DEPLOY_KNOWN_HOSTS` получите командой
+`ssh-keyscan -H DEPLOY_HOST`, а fingerprint сверьте через доверенный канал с
+`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` на сервере. Workflow
+последовательно запускает миграции и сервисы, ждёт их healthcheck и при ошибке
+возвращает предыдущий образ приложения. Миграции БД автоматически не
+откатываются, поэтому production-миграции должны быть обратно совместимыми.
 
 Обязательные переменные:
 

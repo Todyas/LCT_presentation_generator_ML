@@ -8,6 +8,10 @@ permissions:
   contents: read
   packages: write
 
+concurrency:
+  group: production-release
+  cancel-in-progress: false
+
 env:
   REGISTRY_IMAGE: ghcr.io/todyas/lct_presentation_generator_ml
 
@@ -18,6 +22,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     needs: checks
+    timeout-minutes: 30
     outputs:
       image_tag: ${{ steps.vars.outputs.image_tag }}
     steps:
@@ -33,6 +38,8 @@ jobs:
         with:
           context: .
           push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           tags: |
             ${{ env.REGISTRY_IMAGE }}:${{ github.sha }}
             ${{ env.REGISTRY_IMAGE }}:main
@@ -42,25 +49,37 @@ jobs:
     runs-on: ubuntu-latest
     needs: publish
     environment: production
+    timeout-minutes: 10
     steps:
+      - uses: actions/checkout@v4
       - name: Configure SSH
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
+          test -n "$DEPLOY_SSH_KEY"
+          test -n "$DEPLOY_KNOWN_HOSTS"
           install -m 700 -d ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
-      - name: Deploy immutable image and run readiness check
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Deploy immutable image
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
           IMAGE_TAG: ${{ needs.publish.outputs.image_tag }}
         run: |
-          ssh "$DEPLOY_USER@$DEPLOY_HOST" \
-            "cd '$DEPLOY_PATH' && git pull --ff-only && \
-             BACKEND_IMAGE='${REGISTRY_IMAGE}' IMAGE_TAG='$IMAGE_TAG' docker compose pull && \
-             BACKEND_IMAGE='${REGISTRY_IMAGE}' IMAGE_TAG='$IMAGE_TAG' docker compose up -d --no-build && \
-             curl --fail --retry 12 --retry-delay 5 http://localhost:1494/health/ready"
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_PATH"
+          printf -v prepare_command 'mkdir -p %q/scripts' "$DEPLOY_PATH"
+          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "$prepare_command"
+          tar -cf - docker-compose.yml scripts/deploy.sh | \
+            ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" \
+              "tar -xf - -C $(printf '%q' "$DEPLOY_PATH")"
+          printf -v remote_command \
+            'cd %q && ./scripts/deploy.sh %q %q' \
+            "$DEPLOY_PATH" "$REGISTRY_IMAGE" "$IMAGE_TAG"
+          ssh -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "$remote_command"
