@@ -91,7 +91,11 @@ def _slide_quality_problems(slide: SlideIR, requested_layout: LayoutType) -> lis
     processes = [c for c in slide.components if isinstance(c, ProcessData)]
     icon_lists = [c for c in slide.components if isinstance(c, IconListData)]
     bullet_items = [item for block in bullet_blocks for item in block.items]
-    if requested_layout == LayoutType.CONTENT_1COL and len(bullet_items) < 2 and not icon_lists:
+    if (
+        requested_layout == LayoutType.CONTENT_1COL
+        and len(bullet_items) < 2
+        and not icon_lists
+    ):
         problems.append("text slide needs at least two distinct supporting points")
     if (
         requested_layout == LayoutType.CONTENT_2COL
@@ -114,8 +118,14 @@ def _slide_quality_problems(slide: SlideIR, requested_layout: LayoutType) -> lis
         component.type == "table" for component in slide.components
     ):
         problems.append("TABLE_FOCUSED requires a table component")
-    if requested_layout == LayoutType.COMPARISON and not comparisons and len(bullet_blocks) != 2:
-        problems.append("COMPARISON requires a comparison component or two bullet blocks")
+    if (
+        requested_layout == LayoutType.COMPARISON
+        and not comparisons
+        and len(bullet_blocks) != 2
+    ):
+        problems.append(
+            "COMPARISON requires a comparison component or two bullet blocks"
+        )
     if requested_layout == LayoutType.PROCESS_TIMELINE and not processes:
         problems.append("PROCESS_TIMELINE requires a process component")
     if any(item.text.lstrip("*").lower().startswith("тезис:") for item in bullet_items):
@@ -133,7 +143,9 @@ async def fill_slide(
     model: str,
     max_retries: int = 2,
 ) -> SlideIR:
-    resolved_layout = manifest.find_layout_or_fallback(item.suggested_layout_type, item.slide_index)
+    resolved_layout = manifest.find_layout_or_fallback(
+        item.suggested_layout_type, item.slide_index
+    )
     # Composition is a semantic decision. A generic BODY placeholder can host
     # a native chart/table/card group, so a weak template classification must
     # not collapse every requested archetype back to bullet text.

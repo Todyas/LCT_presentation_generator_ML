@@ -71,7 +71,9 @@ def run_geometry_audit(
                         severity=Severity.CRITICAL,
                         slide_index=slide_index,
                         message=f"shapes {id_a!r} and {id_b!r} overlap",
-                        bbox=AuditBBox(x=overlap.x, y=overlap.y, w=overlap.w, h=overlap.h),
+                        bbox=AuditBBox(
+                            x=overlap.x, y=overlap.y, w=overlap.w, h=overlap.h
+                        ),
                         shape_ids=[id_a, id_b],
                         auto_fixable=False,
                     )

@@ -9,7 +9,10 @@ _NAME_RULES: list[tuple[tuple[str, ...], LayoutType]] = [
     (("chart", "график", "диаграмм"), LayoutType.CHART_FOCUSED),
     (("comparison", "сравнен"), LayoutType.COMPARISON),
     (("kpi", "metric", "метрик", "показател"), LayoutType.KPI_DASHBOARD),
-    (("process", "timeline", "процесс", "этап", "таймлайн"), LayoutType.PROCESS_TIMELINE),
+    (
+        ("process", "timeline", "процесс", "этап", "таймлайн"),
+        LayoutType.PROCESS_TIMELINE,
+    ),
     (("quote", "цитат"), LayoutType.QUOTE),
     (("two content", "2 колон", "two colum"), LayoutType.CONTENT_2COL),
     (("blank", "пуст"), LayoutType.BLANK),
@@ -44,7 +47,7 @@ def classify_layout(layout_name: str, slots: list[LayoutSlot]) -> LayoutType:
     body_slots = [s for s in slots if s.placeholder_type == PlaceholderType.BODY]
     if len(body_slots) >= 2:
         for i, a in enumerate(body_slots):
-            for b in body_slots[i + 1:]:
+            for b in body_slots[i + 1 :]:
                 if _slots_disjoint(a, b):
                     return LayoutType.CONTENT_2COL
 

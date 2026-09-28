@@ -46,7 +46,8 @@ def _find_one(pattern: str) -> Path:
     # i.e. into this same input directory — exclude those, and Office's own "~$" lock
     # files for anything currently open, from the template lookup.
     matches = sorted(
-        p for p in INPUT_DIR.glob(pattern)
+        p
+        for p in INPUT_DIR.glob(pattern)
         if not p.name.startswith("built_") and not p.name.startswith("~$")
     )
     if not matches:
@@ -66,7 +67,9 @@ def _extract_pdf_text(pdf_path: Path) -> str:
     if not text:
         raise ValueError(f"no extractable text in {pdf_path} (scanned/image-only PDF?)")
     if len(text) > MAX_BRIEF_CHARS:
-        print(f"[warn] brief text is {len(text)} chars, truncating to {MAX_BRIEF_CHARS}")
+        print(
+            f"[warn] brief text is {len(text)} chars, truncating to {MAX_BRIEF_CHARS}"
+        )
         text = text[:MAX_BRIEF_CHARS]
     return text
 
@@ -122,7 +125,9 @@ async def main() -> None:
             entry["audit_passed"] = vr.audit_report.passed
             entry["issue_count"] = len(vr.audit_report.issues)
 
-        print(f"[{variant}] OK — pptx: {pptx_dest.name} | audit passed: {entry.get('audit_passed')} | issues: {entry.get('issue_count')}")
+        print(
+            f"[{variant}] OK — pptx: {pptx_dest.name} | audit passed: {entry.get('audit_passed')} | issues: {entry.get('issue_count')}"
+        )
         summary[variant] = entry
 
     (OUTPUT_DIR / "summary.json").write_text(

@@ -53,13 +53,14 @@ def ungrounded_numbers(value: BaseModel | str | dict, brief: str) -> set[str]:
     return _normalized_claim_numbers(text) - allowed
 
 
-def near_duplicate_pairs(messages: Iterable[str], threshold: float = 0.78) -> list[tuple[int, int]]:
+def near_duplicate_pairs(
+    messages: Iterable[str], threshold: float = 0.78
+) -> list[tuple[int, int]]:
     # Prefix normalization catches common Russian inflections (e.g.
     # "подготовки" / "подготовку") without introducing a heavyweight NLP
     # dependency into the generation worker.
     token_sets = [
-        {word.lower()[:7] for word in _WORD_RE.findall(message)}
-        for message in messages
+        {word.lower()[:7] for word in _WORD_RE.findall(message)} for message in messages
     ]
     duplicates: list[tuple[int, int]] = []
     for left in range(len(token_sets)):

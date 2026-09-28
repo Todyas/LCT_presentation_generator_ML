@@ -187,7 +187,10 @@ async def analyze_template(
     match_score = round(100 * len(known_layouts) / max(1, len(manifest.layouts)))
     colors = list(
         dict.fromkeys(
-            [*manifest.colors.model_dump().values(), *manifest.brand_profile.sampled_colors]
+            [
+                *manifest.colors.model_dump().values(),
+                *manifest.brand_profile.sampled_colors,
+            ]
         )
     )
     fonts = list(dict.fromkeys(manifest.fonts.model_dump().values()))
@@ -426,7 +429,9 @@ def _variant_payload(job_id: str, variant_result, manifest=None) -> dict:
                     "slide_index": slide.slide_index,
                     "title": slide.title.text,
                     "layout_type": slide.layout_type.value,
-                    "component_types": [component.type for component in slide.components],
+                    "component_types": [
+                        component.type for component in slide.components
+                    ],
                     "preview_url": (
                         f"/jobs/{job_id}/previews/{code}/{position}"
                         if position <= len(variant_result.preview_paths)
@@ -461,8 +466,12 @@ def _variant_payload(job_id: str, variant_result, manifest=None) -> dict:
                 elif component.type == "comparison":
                     text_words += len(component.left_title.split())
                     text_words += len(component.right_title.split())
-                    text_words += sum(len(item.split()) for item in component.left_items)
-                    text_words += sum(len(item.split()) for item in component.right_items)
+                    text_words += sum(
+                        len(item.split()) for item in component.left_items
+                    )
+                    text_words += sum(
+                        len(item.split()) for item in component.right_items
+                    )
                 elif component.type == "process":
                     text_words += sum(
                         len(step.title.split()) + len(step.description.split())
@@ -474,7 +483,9 @@ def _variant_payload(job_id: str, variant_result, manifest=None) -> dict:
                         for item in component.items
                     )
                 elif component.type == "metric_card":
-                    text_words += len(component.label.split()) + len(component.value.split())
+                    text_words += len(component.label.split()) + len(
+                        component.value.split()
+                    )
                 if component.type in {"metric_card", "chart", "table"}:
                     data_components += 1
                 if component.type != "bullet_block":

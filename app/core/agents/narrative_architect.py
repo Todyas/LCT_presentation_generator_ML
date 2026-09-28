@@ -64,8 +64,7 @@ async def build_outline(
     # region. They stay available even when a corporate template calls every
     # custom layout UNKNOWN.
     available_layout_types = sorted(
-        {l.layout_type.value for l in manifest.layouts}
-        | _SUPPORTED_SEMANTIC_LAYOUTS
+        {l.layout_type.value for l in manifest.layouts} | _SUPPORTED_SEMANTIC_LAYOUTS
     )
     base_user_prompt = spec.user_template.format(
         brief=brief,

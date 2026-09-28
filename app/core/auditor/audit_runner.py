@@ -39,13 +39,20 @@ async def run_full_audit(
         }
         issues.extend(
             run_geometry_audit(
-                geometry_bboxes, manifest.slide_width_emu, manifest.slide_height_emu, slide_index
+                geometry_bboxes,
+                manifest.slide_width_emu,
+                manifest.slide_height_emu,
+                slide_index,
             )
         )
 
-    for slide_index, shape_id, hex_color, background, is_large in _iter_text_shape_colors(
-        build_result, ir, manifest
-    ):
+    for (
+        slide_index,
+        shape_id,
+        hex_color,
+        background,
+        is_large,
+    ) in _iter_text_shape_colors(build_result, ir, manifest):
         issue = run_contrast_audit(
             text_color_hex=hex_color,
             bg_color_hex=background,

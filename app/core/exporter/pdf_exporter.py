@@ -22,8 +22,10 @@ async def convert_to_pdf(pptx_path: str, output_dir: str, timeout_s: int = 60) -
         "soffice",
         "--headless",
         f"-env:UserInstallation=file://{profile_dir.as_posix()}",
-        "--convert-to", "pdf",
-        "--outdir", output_dir,
+        "--convert-to",
+        "pdf",
+        "--outdir",
+        output_dir,
         pptx_path,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -33,7 +35,9 @@ async def convert_to_pdf(pptx_path: str, output_dir: str, timeout_s: int = 60) -
     except TimeoutError:
         proc.kill()
         await proc.wait()
-        raise ExportTimeoutError(f"soffice conversion of {pptx_path} exceeded {timeout_s}s")
+        raise ExportTimeoutError(
+            f"soffice conversion of {pptx_path} exceeded {timeout_s}s"
+        )
 
     expected_pdf = Path(output_dir) / (Path(pptx_path).stem + ".pdf")
     if proc.returncode != 0 or not expected_pdf.exists():

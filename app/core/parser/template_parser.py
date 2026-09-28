@@ -88,9 +88,7 @@ def _extract_brand_profile(prs: Presentation) -> BrandProfile:
                     if text_color:
                         colors[text_color] += 1
     title_candidates = [size for size in title_sizes if size >= 18]
-    title_size = (
-        max(18, min(54, median(title_candidates))) if title_candidates else 32
-    )
+    title_size = max(18, min(54, median(title_candidates))) if title_candidates else 32
     body_size = max(10, min(32, median(body_sizes))) if body_sizes else 20
     return BrandProfile(
         title_size_pt=title_size,
@@ -138,7 +136,9 @@ def _inferred_slots(
         if text and not include_text_content and not (has_chart or has_table):
             continue
         name = (getattr(shape, "name", "") or "").casefold()
-        title_hint = any(token in f"{name} {text}" for token in ("title", "заголов", "header"))
+        title_hint = any(
+            token in f"{name} {text}" for token in ("title", "заголов", "header")
+        )
         is_title = title_hint or (normalized.y < 0.25 and normalized.h < 0.28)
         slot_type = (
             PlaceholderType.CHART
@@ -215,7 +215,9 @@ class TemplateParser:
         try:
             cache_dir.mkdir(exist_ok=True)
         except OSError:
-            logger.warning("cache directory %s is not writable, caching disabled", cache_dir)
+            logger.warning(
+                "cache directory %s is not writable, caching disabled", cache_dir
+            )
             cache_writable = False
 
         if cache_writable and cache_path.exists():
@@ -264,7 +266,9 @@ class TemplateParser:
                     slots.append(
                         LayoutSlot(
                             placeholder_idx=placeholder.placeholder_format.idx,
-                            placeholder_type=_map_placeholder_type(placeholder.placeholder_format.type),
+                            placeholder_type=_map_placeholder_type(
+                                placeholder.placeholder_format.type
+                            ),
                             geometry=geometry,
                             normalized=normalized,
                             name=placeholder.name,
@@ -273,7 +277,10 @@ class TemplateParser:
                 existing_kinds = {slot.placeholder_type for slot in slots}
                 inferred = _inferred_slots(layout, prs.slide_width, prs.slide_height)
                 for slot in inferred:
-                    if slot.placeholder_type not in existing_kinds or slot.placeholder_type == PlaceholderType.BODY:
+                    if (
+                        slot.placeholder_type not in existing_kinds
+                        or slot.placeholder_type == PlaceholderType.BODY
+                    ):
                         slots.append(slot)
                 layout_type = classify_layout(layout.name, slots)
                 layouts.append(
@@ -292,7 +299,9 @@ class TemplateParser:
         # the owning layout as inferred slots; the builder will reuse the geometry
         # without copying example content into the generated deck.
         for slide_number, slide in enumerate(prs.slides, start=1):
-            owner_index = layout_index_by_partname.get(str(slide.slide_layout.part.partname))
+            owner_index = layout_index_by_partname.get(
+                str(slide.slide_layout.part.partname)
+            )
             if owner_index is None:
                 continue
             target = layouts[owner_index]
@@ -329,5 +338,7 @@ class TemplateParser:
             try:
                 cache_path.write_text(manifest.model_dump_json())
             except OSError:
-                logger.warning("cannot write template cache %s; caching disabled", cache_path)
+                logger.warning(
+                    "cannot write template cache %s; caching disabled", cache_path
+                )
         return manifest

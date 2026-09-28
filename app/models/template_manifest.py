@@ -120,7 +120,9 @@ class TemplateManifest(BaseModel):
     def find_layout(self, layout_type: LayoutType) -> LayoutManifest | None:
         return next((l for l in self.layouts if l.layout_type == layout_type), None)
 
-    def find_layout_or_fallback(self, layout_type: LayoutType, slide_index: int = 0) -> LayoutManifest:
+    def find_layout_or_fallback(
+        self, layout_type: LayoutType, slide_index: int = 0
+    ) -> LayoutManifest:
         if slide_index == 0:
             found = self.find_layout(layout_type)
             if found is not None:
@@ -144,10 +146,14 @@ class TemplateManifest(BaseModel):
             if preferred is not None:
                 return preferred
         for l in self.layouts:
-            if l.layout_type != LayoutType.TITLE_SLIDE and l.slot_by_type(PlaceholderType.BODY) is not None:
+            if (
+                l.layout_type != LayoutType.TITLE_SLIDE
+                and l.slot_by_type(PlaceholderType.BODY) is not None
+            ):
                 return l
         non_title_layouts = [
-            layout for layout in self.layouts
+            layout
+            for layout in self.layouts
             if layout.layout_type != LayoutType.TITLE_SLIDE
         ]
         if non_title_layouts:

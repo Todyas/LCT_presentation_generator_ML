@@ -119,7 +119,9 @@ class ProcessData(BaseModel):
 
 
 class IconListItem(BaseModel):
-    icon: Literal["check", "shield", "speed", "people", "cloud", "gear", "chart", "star"] = "check"
+    icon: Literal[
+        "check", "shield", "speed", "people", "cloud", "gear", "chart", "star"
+    ] = "check"
     title: str = Field(min_length=1, max_length=60)
     description: str = Field(default="", max_length=140)
 

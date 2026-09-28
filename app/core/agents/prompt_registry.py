@@ -21,7 +21,9 @@ class PromptRegistry:
     def __init__(self, skills_dir: str = "skills") -> None:
         self._skills_dir = Path(skills_dir)
 
-    def load(self, skill_id: str, version: int | Literal["latest"] = "latest") -> PromptSpec:
+    def load(
+        self, skill_id: str, version: int | Literal["latest"] = "latest"
+    ) -> PromptSpec:
         skill_dir = self._skills_dir / skill_id
         if version == "latest":
             version = self._resolve_latest_version(skill_dir)

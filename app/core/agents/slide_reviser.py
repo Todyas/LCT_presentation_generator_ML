@@ -63,8 +63,12 @@ async def revise_slide(
                 token in instructions.casefold()
                 for token in ("визуаль", "график", "схем", "layout", "макет")
             )
-            if wants_visual and revised.components and all(
-                component.type == "bullet_block" for component in revised.components
+            if (
+                wants_visual
+                and revised.components
+                and all(
+                    component.type == "bullet_block" for component in revised.components
+                )
             ):
                 raise ValueError(
                     "visual revision requested but response contains only bullet text"

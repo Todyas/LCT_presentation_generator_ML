@@ -9,7 +9,9 @@ from app.models.template_manifest import Geometry
 EMU_PER_INCH = 914_400
 
 
-def _wrap_line_count(text: str, font: ImageFont.FreeTypeFont, max_width_px: float) -> int:
+def _wrap_line_count(
+    text: str, font: ImageFont.FreeTypeFont, max_width_px: float
+) -> int:
     words = text.split() or [""]
     lines = 1
     line_width = 0.0

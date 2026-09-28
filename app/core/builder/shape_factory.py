@@ -30,9 +30,15 @@ from app.models.template_manifest import Geometry, ThemeColors
 
 _METRIC_VALUE_MAX_PT = 28
 _METRIC_LABEL_MAX_PT = 14
-_METRIC_TEXT_MARGIN_PT = 4  # tight inner margin so long values like "2,4 млрд ₽" keep their width
-_METRIC_CARD_GAP_EMU = 317_500  # 25pt gap between cards in a row, wide enough to stop edge clipping
-_METRIC_CARD_MAX_HEIGHT_EMU = 1_600_200  # ~1.75in cap so a lone card "row" isn't absurdly tall
+_METRIC_TEXT_MARGIN_PT = (
+    4  # tight inner margin so long values like "2,4 млрд ₽" keep their width
+)
+_METRIC_CARD_GAP_EMU = (
+    317_500  # 25pt gap between cards in a row, wide enough to stop edge clipping
+)
+_METRIC_CARD_MAX_HEIGHT_EMU = (
+    1_600_200  # ~1.75in cap so a lone card "row" isn't absurdly tall
+)
 
 CHART_TYPE_MAP = {
     "bar": XL_CHART_TYPE.BAR_CLUSTERED,
@@ -47,14 +53,24 @@ def _is_dark(hex_color: str) -> bool:
     return 0.2126 * red + 0.7152 * green + 0.0722 * blue < 118
 
 
-def _surface_palette(slide: Slide, theme: ThemeColors, width: int, height: int) -> tuple[str, str, str]:
+def _surface_palette(
+    slide: Slide, theme: ThemeColors, width: int, height: int
+) -> tuple[str, str, str]:
     background = _background_hex(slide, theme, width, height)
     if _is_dark(background):
         return theme.dk2, theme.lt1, theme.accent5
     return theme.lt1, theme.dk1, theme.accent1
 
 
-def _style_text_frame(text_frame: TextFrame, text: str, color: str, font_name: str, size: int, *, bold: bool = False) -> None:
+def _style_text_frame(
+    text_frame: TextFrame,
+    text: str,
+    color: str,
+    font_name: str,
+    size: int,
+    *,
+    bold: bool = False,
+) -> None:
     text_frame.clear()
     text_frame.text = text
     text_frame.word_wrap = True
@@ -156,8 +172,7 @@ def _background_hex(
 
 def _contrasting_text_hex(background_hex: str, theme: ThemeColors) -> str:
     red, green, blue = (
-        int(background_hex[index : index + 2], 16) / 255
-        for index in (0, 2, 4)
+        int(background_hex[index : index + 2], 16) / 255 for index in (0, 2, 4)
     )
     luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
     return theme.lt1 if luminance < 0.48 else theme.dk1
@@ -179,7 +194,9 @@ def _render_bullet_text(paragraph, text: str) -> None:
         paragraph.add_run().text = text[pos:]
 
 
-def render_bullet_block(text_frame: TextFrame, block: BulletBlock, font_path: str, font_name: str) -> None:
+def render_bullet_block(
+    text_frame: TextFrame, block: BulletBlock, font_path: str, font_name: str
+) -> None:
     text_frame.clear()
     for i, item in enumerate(block.items):
         paragraph = text_frame.paragraphs[0] if i == 0 else text_frame.add_paragraph()
@@ -203,8 +220,10 @@ def render_title_component(
     generated = placeholder_shape is None
     if placeholder_shape is None:
         shape = slide.shapes.add_textbox(
-            Emu(geometry.left_emu), Emu(geometry.top_emu),
-            Emu(geometry.width_emu), Emu(geometry.height_emu),
+            Emu(geometry.left_emu),
+            Emu(geometry.top_emu),
+            Emu(geometry.width_emu),
+            Emu(geometry.height_emu),
         )
     else:
         shape = placeholder_shape
@@ -248,13 +267,23 @@ def render_bullet_component(
     generated_textbox = placeholder_shape is None
     if placeholder_shape is not None:
         text_frame = placeholder_shape.text_frame
-        bbox = BBox(placeholder_shape.left, placeholder_shape.top, placeholder_shape.width, placeholder_shape.height)
+        bbox = BBox(
+            placeholder_shape.left,
+            placeholder_shape.top,
+            placeholder_shape.width,
+            placeholder_shape.height,
+        )
     else:
         textbox = slide.shapes.add_textbox(
-            Emu(geometry.left_emu), Emu(geometry.top_emu), Emu(geometry.width_emu), Emu(geometry.height_emu)
+            Emu(geometry.left_emu),
+            Emu(geometry.top_emu),
+            Emu(geometry.width_emu),
+            Emu(geometry.height_emu),
         )
         text_frame = textbox.text_frame
-        bbox = BBox(geometry.left_emu, geometry.top_emu, geometry.width_emu, geometry.height_emu)
+        bbox = BBox(
+            geometry.left_emu, geometry.top_emu, geometry.width_emu, geometry.height_emu
+        )
 
     render_bullet_block(text_frame, block, font_path, font_name)
     if generated_textbox:
@@ -298,8 +327,10 @@ def render_metric_card(
 ) -> BBox:
     shape = slide.shapes.add_shape(
         MSO_SHAPE.ROUNDED_RECTANGLE,
-        Emu(geometry.left_emu), Emu(geometry.top_emu),
-        Emu(geometry.width_emu), Emu(geometry.height_emu),
+        Emu(geometry.left_emu),
+        Emu(geometry.top_emu),
+        Emu(geometry.width_emu),
+        Emu(geometry.height_emu),
     )
     shape.fill.solid()
     shape.fill.fore_color.rgb = _rgb(theme.lt2)
@@ -310,14 +341,20 @@ def render_metric_card(
 
     value_height = int(geometry.height_emu * 0.6)
     value_box = slide.shapes.add_textbox(
-        Emu(geometry.left_emu), Emu(geometry.top_emu),
-        Emu(geometry.width_emu), Emu(value_height),
+        Emu(geometry.left_emu),
+        Emu(geometry.top_emu),
+        Emu(geometry.width_emu),
+        Emu(value_height),
     )
     value_box.text_frame.margin_left = Pt(_METRIC_TEXT_MARGIN_PT)
     value_box.text_frame.margin_right = Pt(_METRIC_TEXT_MARGIN_PT)
     value_box.text_frame.text = card.value
     value_size = autofit_font_size(
-        [card.value], usable_width, value_height, font_path, max_size_pt=_METRIC_VALUE_MAX_PT
+        [card.value],
+        usable_width,
+        value_height,
+        font_path,
+        max_size_pt=_METRIC_VALUE_MAX_PT,
     )
     value_box.text_frame.paragraphs[0].runs[0].font.size = Pt(value_size)
     value_box.text_frame.paragraphs[0].runs[0].font.bold = True
@@ -328,8 +365,10 @@ def render_metric_card(
     label_top = geometry.top_emu + value_height
     label_height = geometry.height_emu - value_height
     label_box = slide.shapes.add_textbox(
-        Emu(geometry.left_emu), Emu(label_top),
-        Emu(geometry.width_emu), Emu(label_height),
+        Emu(geometry.left_emu),
+        Emu(label_top),
+        Emu(geometry.width_emu),
+        Emu(label_height),
     )
     label_box.text_frame.margin_left = Pt(_METRIC_TEXT_MARGIN_PT)
     label_box.text_frame.margin_right = Pt(_METRIC_TEXT_MARGIN_PT)
@@ -343,7 +382,9 @@ def render_metric_card(
     if font_name:
         label_box.text_frame.paragraphs[0].runs[0].font.name = font_name
 
-    return BBox(geometry.left_emu, geometry.top_emu, geometry.width_emu, geometry.height_emu)
+    return BBox(
+        geometry.left_emu, geometry.top_emu, geometry.width_emu, geometry.height_emu
+    )
 
 
 def render_metric_card_group(
@@ -419,12 +460,17 @@ def render_table(
     rows = len(table.rows) + 1
     cols = len(table.headers)
     graphic_frame = slide.shapes.add_table(
-        rows, cols,
-        Emu(geometry.left_emu), Emu(geometry.top_emu),
-        Emu(geometry.width_emu), Emu(geometry.height_emu),
+        rows,
+        cols,
+        Emu(geometry.left_emu),
+        Emu(geometry.top_emu),
+        Emu(geometry.width_emu),
+        Emu(geometry.height_emu),
     )
     fill_table_cells(graphic_frame.table, table, theme, font_name)
-    return BBox(geometry.left_emu, geometry.top_emu, geometry.width_emu, geometry.height_emu)
+    return BBox(
+        geometry.left_emu, geometry.top_emu, geometry.width_emu, geometry.height_emu
+    )
 
 
 def render_table_into_placeholder(
@@ -435,7 +481,9 @@ def render_table_into_placeholder(
 ) -> BBox:
     graphic_frame = placeholder.insert_table(len(table.rows) + 1, len(table.headers))
     fill_table_cells(graphic_frame.table, table, theme, font_name)
-    return BBox(graphic_frame.left, graphic_frame.top, graphic_frame.width, graphic_frame.height)
+    return BBox(
+        graphic_frame.left, graphic_frame.top, graphic_frame.width, graphic_frame.height
+    )
 
 
 def render_table_component(
@@ -489,20 +537,28 @@ def render_chart(
     chart_data = build_chart_data(chart)
     graphic_frame = slide.shapes.add_chart(
         CHART_TYPE_MAP[chart.chart_type],
-        Emu(geometry.left_emu), Emu(geometry.top_emu),
-        Emu(geometry.width_emu), Emu(geometry.height_emu),
+        Emu(geometry.left_emu),
+        Emu(geometry.top_emu),
+        Emu(geometry.width_emu),
+        Emu(geometry.height_emu),
         chart_data,
     )
     _style_chart(graphic_frame.chart, theme)
-    return BBox(geometry.left_emu, geometry.top_emu, geometry.width_emu, geometry.height_emu)
+    return BBox(
+        geometry.left_emu, geometry.top_emu, geometry.width_emu, geometry.height_emu
+    )
 
 
 def render_chart_into_placeholder(
     placeholder: ChartPlaceholder, chart: ChartData, theme: ThemeColors | None = None
 ) -> BBox:
-    graphic_frame = placeholder.insert_chart(CHART_TYPE_MAP[chart.chart_type], build_chart_data(chart))
+    graphic_frame = placeholder.insert_chart(
+        CHART_TYPE_MAP[chart.chart_type], build_chart_data(chart)
+    )
     _style_chart(graphic_frame.chart, theme)
-    return BBox(graphic_frame.left, graphic_frame.top, graphic_frame.width, graphic_frame.height)
+    return BBox(
+        graphic_frame.left, graphic_frame.top, graphic_frame.width, graphic_frame.height
+    )
 
 
 def render_chart_component(
@@ -526,19 +582,26 @@ def render_comparison(
     slide_width_emu: int,
     slide_height_emu: int,
 ) -> BBox:
-    surface, text_color, accent = _surface_palette(slide, theme, slide_width_emu, slide_height_emu)
+    surface, text_color, accent = _surface_palette(
+        slide, theme, slide_width_emu, slide_height_emu
+    )
     gap = 180_000
     width = (geometry.width_emu - gap) // 2
     sides = (
         (comparison.left_title, comparison.left_items, theme.accent2),
         (comparison.right_title, comparison.right_items, accent),
     )
-    body_size = 14 if len(comparison.left_items) + len(comparison.right_items) <= 6 else 12
+    body_size = (
+        14 if len(comparison.left_items) + len(comparison.right_items) <= 6 else 12
+    )
     for index, (heading, items, side_color) in enumerate(sides):
         left = geometry.left_emu + index * (width + gap)
         card = slide.shapes.add_shape(
             MSO_SHAPE.ROUNDED_RECTANGLE,
-            Emu(left), Emu(geometry.top_emu), Emu(width), Emu(geometry.height_emu),
+            Emu(left),
+            Emu(geometry.top_emu),
+            Emu(width),
+            Emu(geometry.height_emu),
         )
         card.fill.solid()
         card.fill.fore_color.rgb = _rgb(surface)
@@ -546,7 +609,10 @@ def render_comparison(
         band_height = min(650_000, geometry.height_emu // 4)
         band = slide.shapes.add_shape(
             MSO_SHAPE.ROUNDED_RECTANGLE,
-            Emu(left), Emu(geometry.top_emu), Emu(width), Emu(band_height),
+            Emu(left),
+            Emu(geometry.top_emu),
+            Emu(width),
+            Emu(band_height),
         )
         band.fill.solid()
         band.fill.fore_color.rgb = _rgb(side_color)
@@ -555,8 +621,10 @@ def render_comparison(
         band.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
         band.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
         body = slide.shapes.add_textbox(
-            Emu(left + 90_000), Emu(geometry.top_emu + band_height + 70_000),
-            Emu(width - 180_000), Emu(geometry.height_emu - band_height - 140_000),
+            Emu(left + 90_000),
+            Emu(geometry.top_emu + band_height + 70_000),
+            Emu(width - 180_000),
+            Emu(geometry.height_emu - band_height - 140_000),
         )
         block = BulletBlock(items=[{"text": value} for value in items])
         render_bullet_block(body.text_frame, block, "", font_name)
@@ -565,7 +633,9 @@ def render_comparison(
             for run in paragraph.runs:
                 run.font.color.rgb = _rgb(text_color)
                 run.font.size = Pt(body_size)
-    return BBox(geometry.left_emu, geometry.top_emu, geometry.width_emu, geometry.height_emu)
+    return BBox(
+        geometry.left_emu, geometry.top_emu, geometry.width_emu, geometry.height_emu
+    )
 
 
 def render_process(
@@ -577,7 +647,9 @@ def render_process(
     slide_width_emu: int,
     slide_height_emu: int,
 ) -> BBox:
-    _, text_color, accent = _surface_palette(slide, theme, slide_width_emu, slide_height_emu)
+    _, text_color, accent = _surface_palette(
+        slide, theme, slide_width_emu, slide_height_emu
+    )
     count = len(process.steps)
     gap = 95_000
     step_width = (geometry.width_emu - gap * (count - 1)) // count
@@ -586,8 +658,10 @@ def render_process(
     if count > 1:
         connector = slide.shapes.add_shape(
             MSO_SHAPE.RECTANGLE,
-            Emu(geometry.left_emu + circle_size // 2), Emu(line_top - 18_000),
-            Emu(geometry.width_emu - circle_size), Emu(36_000),
+            Emu(geometry.left_emu + circle_size // 2),
+            Emu(line_top - 18_000),
+            Emu(geometry.width_emu - circle_size),
+            Emu(36_000),
         )
         connector.fill.solid()
         connector.fill.fore_color.rgb = _rgb(accent)
@@ -595,27 +669,38 @@ def render_process(
     for index, step in enumerate(process.steps):
         left = geometry.left_emu + index * (step_width + gap)
         circle = slide.shapes.add_shape(
-            MSO_SHAPE.OVAL, Emu(left + (step_width - circle_size) // 2),
-            Emu(geometry.top_emu), Emu(circle_size), Emu(circle_size),
+            MSO_SHAPE.OVAL,
+            Emu(left + (step_width - circle_size) // 2),
+            Emu(geometry.top_emu),
+            Emu(circle_size),
+            Emu(circle_size),
         )
         circle.fill.solid()
         circle.fill.fore_color.rgb = _rgb(accent)
         circle.line.fill.background()
-        _style_text_frame(circle.text_frame, str(index + 1), theme.lt1, font_name, 18, bold=True)
+        _style_text_frame(
+            circle.text_frame, str(index + 1), theme.lt1, font_name, 18, bold=True
+        )
         circle.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
         circle.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
         text_box = slide.shapes.add_textbox(
-            Emu(left), Emu(geometry.top_emu + circle_size + 75_000),
-            Emu(step_width), Emu(geometry.height_emu - circle_size - 75_000),
+            Emu(left),
+            Emu(geometry.top_emu + circle_size + 75_000),
+            Emu(step_width),
+            Emu(geometry.height_emu - circle_size - 75_000),
         )
-        content = step.title if not step.description else f"{step.title}\n{step.description}"
+        content = (
+            step.title if not step.description else f"{step.title}\n{step.description}"
+        )
         text_size = 14 if count <= 4 else 11
         _style_text_frame(
             text_box.text_frame, content, text_color, font_name, text_size, bold=False
         )
         text_box.text_frame.paragraphs[0].runs[0].font.bold = True
         text_box.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
-    return BBox(geometry.left_emu, geometry.top_emu, geometry.width_emu, geometry.height_emu)
+    return BBox(
+        geometry.left_emu, geometry.top_emu, geometry.width_emu, geometry.height_emu
+    )
 
 
 def render_icon_list(
@@ -627,44 +712,72 @@ def render_icon_list(
     slide_width_emu: int,
     slide_height_emu: int,
 ) -> BBox:
-    surface, text_color, accent = _surface_palette(slide, theme, slide_width_emu, slide_height_emu)
+    surface, text_color, accent = _surface_palette(
+        slide, theme, slide_width_emu, slide_height_emu
+    )
     columns = min(len(icon_list.items), 2)
     rows = (len(icon_list.items) + columns - 1) // columns
     gap = 120_000
     cell_width = (geometry.width_emu - gap * (columns - 1)) // columns
     cell_height = (geometry.height_emu - gap * (rows - 1)) // rows
     icon_size = min(440_000, cell_height - 100_000)
-    symbols = {"check": "✓", "shield": "◆", "speed": "➜", "people": "●", "cloud": "☁", "gear": "⚙", "chart": "↗", "star": "★"}
+    symbols = {
+        "check": "✓",
+        "shield": "◆",
+        "speed": "➜",
+        "people": "●",
+        "cloud": "☁",
+        "gear": "⚙",
+        "chart": "↗",
+        "star": "★",
+    }
     for index, item in enumerate(icon_list.items):
         row, column = divmod(index, columns)
         left = geometry.left_emu + column * (cell_width + gap)
         top = geometry.top_emu + row * (cell_height + gap)
         card = slide.shapes.add_shape(
-            MSO_SHAPE.ROUNDED_RECTANGLE, Emu(left), Emu(top), Emu(cell_width), Emu(cell_height),
+            MSO_SHAPE.ROUNDED_RECTANGLE,
+            Emu(left),
+            Emu(top),
+            Emu(cell_width),
+            Emu(cell_height),
         )
         card.fill.solid()
         card.fill.fore_color.rgb = _rgb(surface)
         card.line.color.rgb = _rgb(theme.lt2 if not _is_dark(surface) else theme.dk2)
         icon = slide.shapes.add_shape(
-            MSO_SHAPE.OVAL, Emu(left + 80_000), Emu(top + (cell_height - icon_size) // 2),
-            Emu(icon_size), Emu(icon_size),
+            MSO_SHAPE.OVAL,
+            Emu(left + 80_000),
+            Emu(top + (cell_height - icon_size) // 2),
+            Emu(icon_size),
+            Emu(icon_size),
         )
         icon.fill.solid()
         icon.fill.fore_color.rgb = _rgb(accent)
         icon.line.fill.background()
-        _style_text_frame(icon.text_frame, symbols[item.icon], theme.lt1, font_name, 15, bold=True)
+        _style_text_frame(
+            icon.text_frame, symbols[item.icon], theme.lt1, font_name, 15, bold=True
+        )
         icon.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
         icon.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
         text_box = slide.shapes.add_textbox(
-            Emu(left + icon_size + 150_000), Emu(top + 60_000),
-            Emu(cell_width - icon_size - 220_000), Emu(cell_height - 120_000),
+            Emu(left + icon_size + 150_000),
+            Emu(top + 60_000),
+            Emu(cell_width - icon_size - 220_000),
+            Emu(cell_height - 120_000),
         )
-        content = item.title if not item.description else f"{item.title}\n{item.description}"
+        content = (
+            item.title if not item.description else f"{item.title}\n{item.description}"
+        )
         text_size = 14 if len(icon_list.items) <= 4 else 12
-        _style_text_frame(text_box.text_frame, content, text_color, font_name, text_size)
+        _style_text_frame(
+            text_box.text_frame, content, text_color, font_name, text_size
+        )
         text_box.text_frame.paragraphs[0].runs[0].font.bold = True
         text_box.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
-    return BBox(geometry.left_emu, geometry.top_emu, geometry.width_emu, geometry.height_emu)
+    return BBox(
+        geometry.left_emu, geometry.top_emu, geometry.width_emu, geometry.height_emu
+    )
 
 
 def render_image_placeholder(
@@ -673,20 +786,27 @@ def render_image_placeholder(
     """Render a brand-colored vector illustration when no external asset exists."""
     panel = slide.shapes.add_shape(
         MSO_SHAPE.ROUNDED_RECTANGLE,
-        Emu(geometry.left_emu), Emu(geometry.top_emu),
-        Emu(geometry.width_emu), Emu(geometry.height_emu),
+        Emu(geometry.left_emu),
+        Emu(geometry.top_emu),
+        Emu(geometry.width_emu),
+        Emu(geometry.height_emu),
     )
     panel.fill.solid()
     panel.fill.fore_color.rgb = _rgb(theme.dk2)
     panel.line.color.rgb = _rgb(theme.accent5)
     size = min(geometry.width_emu, geometry.height_emu) // 3
-    centers = ((0.22, 0.3, theme.accent1), (0.58, 0.2, theme.accent5), (0.5, 0.58, theme.accent2))
+    centers = (
+        (0.22, 0.3, theme.accent1),
+        (0.58, 0.2, theme.accent5),
+        (0.5, 0.58, theme.accent2),
+    )
     for x_ratio, y_ratio, color in centers:
         node = slide.shapes.add_shape(
             MSO_SHAPE.OVAL,
             Emu(geometry.left_emu + int(geometry.width_emu * x_ratio)),
             Emu(geometry.top_emu + int(geometry.height_emu * y_ratio)),
-            Emu(size), Emu(size),
+            Emu(size),
+            Emu(size),
         )
         node.fill.solid()
         node.fill.fore_color.rgb = _rgb(color)
@@ -696,4 +816,6 @@ def render_image_placeholder(
         panel.element.nvSpPr.cNvPr.set("descr", alt_text)
     except AttributeError:
         pass
-    return BBox(geometry.left_emu, geometry.top_emu, geometry.width_emu, geometry.height_emu)
+    return BBox(
+        geometry.left_emu, geometry.top_emu, geometry.width_emu, geometry.height_emu
+    )

@@ -46,7 +46,8 @@ def run_density_audit_on_ir(ir: PresentationIR) -> list[AuditIssue]:
                             )
                         )
             if component.type == "table" and (
-                len(component.headers) > MAX_TABLE_COLS or len(component.rows) > MAX_TABLE_ROWS
+                len(component.headers) > MAX_TABLE_COLS
+                or len(component.rows) > MAX_TABLE_ROWS
             ):
                 issues.append(
                     AuditIssue(

@@ -5,17 +5,33 @@ from lxml import etree
 NSMAP = {"a": "http://schemas.openxmlformats.org/drawingml/2006/main"}
 
 FALLBACK_COLORS: dict[str, str] = {
-    "dk1": "000000", "lt1": "FFFFFF", "dk2": "44546A", "lt2": "E7E6E6",
-    "accent1": "4472C4", "accent2": "ED7D31", "accent3": "A5A5A5",
-    "accent4": "FFC000", "accent5": "5B9BD5", "accent6": "70AD47",
-    "hlink": "0563C1", "fol_hlink": "954F72",
+    "dk1": "000000",
+    "lt1": "FFFFFF",
+    "dk2": "44546A",
+    "lt2": "E7E6E6",
+    "accent1": "4472C4",
+    "accent2": "ED7D31",
+    "accent3": "A5A5A5",
+    "accent4": "FFC000",
+    "accent5": "5B9BD5",
+    "accent6": "70AD47",
+    "hlink": "0563C1",
+    "fol_hlink": "954F72",
 }
 
 _XML_TO_OUT_KEY = {
-    "dk1": "dk1", "lt1": "lt1", "dk2": "dk2", "lt2": "lt2",
-    "accent1": "accent1", "accent2": "accent2", "accent3": "accent3",
-    "accent4": "accent4", "accent5": "accent5", "accent6": "accent6",
-    "hlink": "hlink", "folHlink": "fol_hlink",
+    "dk1": "dk1",
+    "lt1": "lt1",
+    "dk2": "dk2",
+    "lt2": "lt2",
+    "accent1": "accent1",
+    "accent2": "accent2",
+    "accent3": "accent3",
+    "accent4": "accent4",
+    "accent5": "accent5",
+    "accent6": "accent6",
+    "hlink": "hlink",
+    "folHlink": "fol_hlink",
 }
 
 

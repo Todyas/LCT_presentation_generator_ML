@@ -27,7 +27,9 @@ def _find_in_system_dirs(typeface_name: str) -> str | None:
     return None
 
 
-def resolve_font_path(typeface_name: str | None, fallback_dir: str = "docker/fonts") -> str:
+def resolve_font_path(
+    typeface_name: str | None, fallback_dir: str = "docker/fonts"
+) -> str:
     fallback = str(Path(fallback_dir) / "DejaVuSans.ttf")
     if not typeface_name:
         return fallback
