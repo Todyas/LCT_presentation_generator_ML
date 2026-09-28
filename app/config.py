@@ -20,7 +20,7 @@ class Settings(BaseSettings):
 
     storage_dir: str = "storage"
     skills_dir: str = "skills"
-    max_upload_bytes: int = 20_000_000
+    max_upload_bytes: int = 50_000_000
     cors_allow_origins: list[str] = ["*"]
 
     database_url: str = "sqlite+pysqlite:///:memory:"
