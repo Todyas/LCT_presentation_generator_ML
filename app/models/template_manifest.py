@@ -138,9 +138,26 @@ class TemplateManifest(BaseModel):
         for l in self.layouts:
             if l.layout_type != LayoutType.TITLE_SLIDE and l.slot_by_type(PlaceholderType.BODY) is not None:
                 return l
-        for l in self.layouts:
-            if l.layout_type != LayoutType.TITLE_SLIDE:
-                return l
+        non_title_layouts = [
+            layout for layout in self.layouts
+            if layout.layout_type != LayoutType.TITLE_SLIDE
+        ]
+        if non_title_layouts:
+            chrome = {
+                PlaceholderType.TITLE,
+                PlaceholderType.FOOTER,
+                PlaceholderType.DATE,
+                PlaceholderType.SLIDE_NUMBER,
+            }
+
+            def usable_area(layout: LayoutManifest) -> float:
+                return sum(
+                    slot.normalized.w * slot.normalized.h
+                    for slot in layout.slots
+                    if slot.placeholder_type not in chrome
+                )
+
+            return max(non_title_layouts, key=usable_area)
         for l in self.layouts:
             if l.slot_by_type(PlaceholderType.BODY) is not None:
                 return l

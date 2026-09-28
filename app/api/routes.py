@@ -429,7 +429,11 @@ def _variant_payload(job_id: str, variant_result, manifest=None) -> dict:
             )
     critical_count = sum(issue.severity.value == "CRITICAL" for issue in issues)
     warning_count = sum(issue.severity.value == "WARNING" for issue in issues)
-    audit_score = max(0, 100 - critical_count * 15 - warning_count * 5)
+    audit_score = (
+        0
+        if variant_result.error
+        else max(0, 100 - critical_count * 15 - warning_count * 5)
+    )
     text_words = 0
     action_titles = 0
     data_components = 0

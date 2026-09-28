@@ -28,9 +28,12 @@ _THEME_PATH = "ppt/theme/theme1.xml"
 _PLACEHOLDER_TYPE_MAP: dict[int, PlaceholderType] = {
     PP_PLACEHOLDER.TITLE: PlaceholderType.TITLE,
     PP_PLACEHOLDER.CENTER_TITLE: PlaceholderType.TITLE,
+    PP_PLACEHOLDER.VERTICAL_TITLE: PlaceholderType.TITLE,
     PP_PLACEHOLDER.SUBTITLE: PlaceholderType.SUBTITLE,
     PP_PLACEHOLDER.BODY: PlaceholderType.BODY,
+    PP_PLACEHOLDER.VERTICAL_BODY: PlaceholderType.BODY,
     PP_PLACEHOLDER.OBJECT: PlaceholderType.BODY,
+    PP_PLACEHOLDER.VERTICAL_OBJECT: PlaceholderType.BODY,
     PP_PLACEHOLDER.PICTURE: PlaceholderType.PICTURE,
     PP_PLACEHOLDER.TABLE: PlaceholderType.TABLE,
     PP_PLACEHOLDER.CHART: PlaceholderType.CHART,

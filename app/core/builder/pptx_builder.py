@@ -43,7 +43,6 @@ class BuildResult:
 
 
 SLIDE_MARGIN_EMU = 91_440  # 0.1 inch — spacing between an auto-placed component and its predecessor
-_FALLBACK_HEIGHT_EMU = 1_500_000  # default box height when no matching slot exists, not a slide coordinate
 _FALLBACK_WIDTH_RATIO = 0.8  # fraction of slide width used only when a layout has no content slots at all
 _COLUMN_GAP_EMU = 137_160  # 0.15in gap between two bullet-block columns sharing one slot
 
@@ -296,15 +295,21 @@ class PptxBuilder:
             left = min(s.geometry.left_emu for s in content_slots)
             right = max(s.geometry.right_emu for s in content_slots)
             width = right - left
+            region_top = min(s.geometry.top_emu for s in content_slots)
+            region_bottom = max(s.geometry.bottom_emu for s in content_slots)
+            top = max(cursor_bottom_emu, region_top)
+            available_height = region_bottom - top
         else:
             width = int(prs.slide_width * _FALLBACK_WIDTH_RATIO)
             left = int((prs.slide_width - width) / 2)
-
+            top = cursor_bottom_emu
+            available_height = prs.slide_height - top - int(prs.slide_height * 0.07)
+        fallback_height = max(400_000, available_height)
         return Geometry(
             left_emu=left,
-            top_emu=cursor_bottom_emu,
+            top_emu=top,
             width_emu=width,
-            height_emu=_FALLBACK_HEIGHT_EMU,
+            height_emu=fallback_height,
         )
 
     def _render_component(

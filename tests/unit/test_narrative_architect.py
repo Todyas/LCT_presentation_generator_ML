@@ -1,5 +1,8 @@
 from unittest.mock import AsyncMock
 
+import pytest
+from pydantic import ValidationError
+
 from app.core.agents.narrative_architect import build_outline
 from app.core.agents.prompt_registry import PromptRegistry
 from app.models.outline import Outline, OutlineItem
@@ -85,3 +88,62 @@ async def test_build_outline_calls_llm_with_variant_description():
 
     _, kwargs = llm.complete_structured.call_args
     assert "Analytical" in kwargs["user_prompt"]
+    assert "KPI_DASHBOARD" in kwargs["user_prompt"]
+
+
+async def test_build_outline_retries_schema_validation_errors():
+    with pytest.raises(ValidationError) as captured:
+        Outline.model_validate(
+            {
+                "variant": "A",
+                "items": [
+                    {
+                        **_outline_item(i).model_dump(),
+                        "working_title": "" if i == 0 else f"Slide {i}",
+                    }
+                    for i in range(10)
+                ],
+            }
+        )
+    valid = Outline(variant="A", items=[_outline_item(i) for i in range(10)])
+    llm = AsyncMock()
+    llm.complete_structured = AsyncMock(side_effect=[captured.value, valid])
+
+    result = await build_outline(
+        brief="A brief about quarterly performance.",
+        manifest=_manifest(),
+        variant="A",
+        llm=llm,
+        registry=PromptRegistry("skills"),
+        model="qwen",
+    )
+
+    assert result == valid
+    assert llm.complete_structured.await_count == 2
+
+
+async def test_build_outline_accepts_best_grounded_result_after_duplicate_retries():
+    items = [_outline_item(i) for i in range(10)]
+    items[4] = items[4].model_copy(update={"key_message": items[0].key_message})
+    repeated = Outline(variant="C", items=items)
+    llm = AsyncMock()
+    llm.complete_structured = AsyncMock(return_value=repeated)
+
+    result = await build_outline(
+        brief="A brief about quarterly performance.",
+        manifest=_manifest(),
+        variant="C",
+        llm=llm,
+        registry=PromptRegistry("skills"),
+        model="qwen",
+    )
+
+    assert result == repeated
+    assert llm.complete_structured.await_count == 3
+
+
+def test_empty_content_hint_falls_back_to_key_message():
+    item = _outline_item(0).model_copy(update={"content_hint": ""})
+    reparsed = OutlineItem.model_validate(item.model_dump())
+
+    assert reparsed.content_hint == reparsed.key_message

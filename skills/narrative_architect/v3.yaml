@@ -54,6 +54,8 @@ user_template: |
   3. Чередуются минимум три типа композиции, если шаблон это позволяет.
   4. Число в working_title есть только там, где оно дано в BRIEF.
   5. История имеет начало, развитие и конкретное завершение/следующий шаг.
+  6. content_hint каждого элемента непустой и конкретно описывает, чем
+     наполнить слайд; не копируй туда working_title.
 
   Return JSON strictly matching the Outline schema.
 output_schema_ref: app.models.outline.Outline
