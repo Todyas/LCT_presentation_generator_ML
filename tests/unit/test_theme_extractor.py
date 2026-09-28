@@ -8,7 +8,7 @@ _NSDECL = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
 
 
 def test_extract_theme_colors_no_clr_scheme_returns_fallback():
-    xml = f'<a:theme {_NSDECL}><a:themeElements/></a:theme>'.encode()
+    xml = f"<a:theme {_NSDECL}><a:themeElements/></a:theme>".encode()
 
     result = extract_theme_colors(xml)
 
@@ -50,7 +50,7 @@ def test_extract_theme_colors_malformed_xml_returns_fallback():
 
 
 def test_extract_font_scheme_missing_returns_calibri_defaults():
-    xml = f'<a:theme {_NSDECL}><a:themeElements/></a:theme>'.encode()
+    xml = f"<a:theme {_NSDECL}><a:themeElements/></a:theme>".encode()
 
     result = extract_font_scheme(xml)
 

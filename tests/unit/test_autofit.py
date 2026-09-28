@@ -11,7 +11,9 @@ LONG_PARAGRAPH = " ".join(["word"] * 60)
 
 def test_long_text_gets_smaller_font_than_short_text():
     short_result = autofit_font_size(["OK"], BOX_WIDTH_EMU, BOX_HEIGHT_EMU, FONT_PATH)
-    long_result = autofit_font_size([LONG_PARAGRAPH], BOX_WIDTH_EMU, BOX_HEIGHT_EMU, FONT_PATH)
+    long_result = autofit_font_size(
+        [LONG_PARAGRAPH], BOX_WIDTH_EMU, BOX_HEIGHT_EMU, FONT_PATH
+    )
 
     assert long_result <= short_result
 

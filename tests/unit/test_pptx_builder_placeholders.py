@@ -41,10 +41,14 @@ def _copy_template(tmp_path: Path) -> str:
     return str(dest)
 
 
-def _mutate_layout_placeholder_type(template_path: str, layout_index: int, idx: int, new_type: PP_PLACEHOLDER) -> None:
+def _mutate_layout_placeholder_type(
+    template_path: str, layout_index: int, idx: int, new_type: PP_PLACEHOLDER
+) -> None:
     prs = Presentation(template_path)
     layout = prs.slide_layouts[layout_index]
-    placeholder = next(p for p in layout.placeholders if p.placeholder_format.idx == idx)
+    placeholder = next(
+        p for p in layout.placeholders if p.placeholder_format.idx == idx
+    )
     placeholder.element.ph.type = new_type
     prs.save(template_path)
 
@@ -55,7 +59,11 @@ def _title(text: str) -> TitleComponent:
 
 def _filler_slides(start_index: int, count: int) -> list[SlideIR]:
     return [
-        SlideIR(slide_index=start_index + i, layout_type=LayoutType.SECTION_HEADER, title=_title(f"Filler {i}"))
+        SlideIR(
+            slide_index=start_index + i,
+            layout_type=LayoutType.SECTION_HEADER,
+            title=_title(f"Filler {i}"),
+        )
         for i in range(count)
     ]
 
@@ -68,10 +76,17 @@ def test_unused_placeholder_is_removed(tmp_path):
     assert subtitle_slot is not None
 
     slides = [
-        SlideIR(slide_index=0, layout_type=LayoutType.TITLE_SLIDE, title=_title("No Subtitle Content"), components=[]),
+        SlideIR(
+            slide_index=0,
+            layout_type=LayoutType.TITLE_SLIDE,
+            title=_title("No Subtitle Content"),
+            components=[],
+        ),
         *_filler_slides(1, 9),
     ]
-    ir = PresentationIR(variant="A", template_source_hash=manifest.source_hash, slides=slides)
+    ir = PresentationIR(
+        variant="A", template_source_hash=manifest.source_hash, slides=slides
+    )
 
     result = PptxBuilder().build(template_path, manifest, ir)
 
@@ -97,7 +112,9 @@ def test_bullet_block_populates_existing_placeholder_not_a_new_textbox(tmp_path)
         ),
         *_filler_slides(1, 9),
     ]
-    ir = PresentationIR(variant="A", template_source_hash=manifest.source_hash, slides=slides)
+    ir = PresentationIR(
+        variant="A", template_source_hash=manifest.source_hash, slides=slides
+    )
 
     result = PptxBuilder().build(template_path, manifest, ir)
 
@@ -108,7 +125,9 @@ def test_bullet_block_populates_existing_placeholder_not_a_new_textbox(tmp_path)
 
 def test_table_component_uses_insert_table_on_matching_placeholder(tmp_path):
     template_path = _copy_template(tmp_path)
-    _mutate_layout_placeholder_type(template_path, layout_index=8, idx=2, new_type=PP_PLACEHOLDER.TABLE)
+    _mutate_layout_placeholder_type(
+        template_path, layout_index=8, idx=2, new_type=PP_PLACEHOLDER.TABLE
+    )
     manifest = TemplateParser().parse(template_path)
     # mutating a BODY slot to TABLE also reclassifies the layout itself (layout_classifier.py
     # promotes any layout containing a TABLE placeholder to TABLE_FOCUSED)
@@ -125,7 +144,9 @@ def test_table_component_uses_insert_table_on_matching_placeholder(tmp_path):
         ),
         *_filler_slides(1, 9),
     ]
-    ir = PresentationIR(variant="A", template_source_hash=manifest.source_hash, slides=slides)
+    ir = PresentationIR(
+        variant="A", template_source_hash=manifest.source_hash, slides=slides
+    )
 
     result = PptxBuilder().build(template_path, manifest, ir)
 

@@ -4,7 +4,10 @@ from app.core.agents.grounding import near_duplicate_pairs, ungrounded_numbers
 def test_grounding_allows_numbers_present_in_brief():
     value = {"title": "Рост на 30%", "components": [{"text": "Выручка — 120 млн"}]}
 
-    assert ungrounded_numbers(value, "Ожидается рост на 30%, выручка составит 120 млн") == set()
+    assert (
+        ungrounded_numbers(value, "Ожидается рост на 30%, выручка составит 120 млн")
+        == set()
+    )
 
 
 def test_grounding_rejects_invented_business_number():

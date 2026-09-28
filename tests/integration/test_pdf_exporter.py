@@ -9,7 +9,9 @@ from app.core.exporter.pdf_exporter import convert_to_pdf
 pytestmark = pytest.mark.docker
 
 if shutil.which("soffice") is None:
-    pytest.skip("soffice (LibreOffice) not installed on this machine", allow_module_level=True)
+    pytest.skip(
+        "soffice (LibreOffice) not installed on this machine", allow_module_level=True
+    )
 
 FIXTURE_PATH = "tests/fixtures/templates/generated_minimal.pptx"
 

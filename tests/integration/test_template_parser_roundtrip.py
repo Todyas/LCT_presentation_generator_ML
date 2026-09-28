@@ -28,15 +28,19 @@ def test_parse_happy_path_has_title_slide_layout():
     manifest = TemplateParser().parse(FIXTURE_PATH)
 
     assert len(manifest.layouts) > 0
-    assert any(layout.layout_type == LayoutType.TITLE_SLIDE for layout in manifest.layouts)
+    assert any(
+        layout.layout_type == LayoutType.TITLE_SLIDE for layout in manifest.layouts
+    )
 
 
 def test_second_parse_uses_cache_and_skips_zip_read():
     parser = TemplateParser()
     first = parser.parse(FIXTURE_PATH)
 
-    with mock.patch("app.core.parser.template_parser.zipfile.ZipFile") as mock_zip, \
-            mock.patch("app.core.parser.template_parser.Presentation") as mock_prs:
+    with (
+        mock.patch("app.core.parser.template_parser.zipfile.ZipFile") as mock_zip,
+        mock.patch("app.core.parser.template_parser.Presentation") as mock_prs,
+    ):
         second = parser.parse(FIXTURE_PATH)
 
     mock_zip.assert_not_called()

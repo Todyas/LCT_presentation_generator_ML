@@ -67,7 +67,9 @@ async def test_clean_deck_passes(tmp_path):
         )
         for i in range(10)
     ]
-    ir = PresentationIR(variant="A", template_source_hash=manifest.source_hash, slides=slides)
+    ir = PresentationIR(
+        variant="A", template_source_hash=manifest.source_hash, slides=slides
+    )
     build_result = PptxBuilder().build(template_path, manifest, ir)
 
     report = await run_full_audit(
@@ -89,7 +91,11 @@ async def test_dirty_deck_flags_multiple_issue_types(tmp_path):
     manifest = TemplateParser().parse(template_path)
 
     layout = manifest.find_layout(LayoutType.CONTENT_2COL)
-    body_idxs = [s.placeholder_idx for s in layout.slots if s.placeholder_type == PlaceholderType.BODY]
+    body_idxs = [
+        s.placeholder_idx
+        for s in layout.slots
+        if s.placeholder_type == PlaceholderType.BODY
+    ]
     assert len(body_idxs) >= 2
 
     # the builder now reports each populated placeholder's own real, inherited geometry
@@ -97,7 +103,9 @@ async def test_dirty_deck_flags_multiple_issue_types(tmp_path):
     # forced onto the actual layout XML, not just the in-memory manifest, to still trip it
     prs = Presentation(template_path)
     pptx_layout = prs.slide_layouts[layout.layout_index]
-    body_placeholders = [p for p in pptx_layout.placeholders if p.placeholder_format.idx in body_idxs]
+    body_placeholders = [
+        p for p in pptx_layout.placeholders if p.placeholder_format.idx in body_idxs
+    ]
     anchor = body_placeholders[0]
     for placeholder in body_placeholders[1:]:
         placeholder.left, placeholder.top = anchor.left, anchor.top
@@ -127,12 +135,16 @@ async def test_dirty_deck_flags_multiple_issue_types(tmp_path):
                 slide_index=i,
                 layout_type=LayoutType.CONTENT_1COL,
                 title=_title(f"Slide {i} conclusion"),
-                components=[BulletBlock(items=[BulletItem(text="A short bullet point")])],
+                components=[
+                    BulletBlock(items=[BulletItem(text="A short bullet point")])
+                ],
             )
             for i in range(2, 10)
         ],
     ]
-    ir = PresentationIR(variant="A", template_source_hash=manifest.source_hash, slides=slides)
+    ir = PresentationIR(
+        variant="A", template_source_hash=manifest.source_hash, slides=slides
+    )
     build_result = PptxBuilder().build(template_path, manifest, ir)
 
     report = await run_full_audit(

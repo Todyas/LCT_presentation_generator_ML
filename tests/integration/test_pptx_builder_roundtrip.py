@@ -62,7 +62,11 @@ def _title(text: str) -> TitleComponent:
 
 def _filler_slides(start_index: int, count: int) -> list[SlideIR]:
     return [
-        SlideIR(slide_index=start_index + i, layout_type=LayoutType.SECTION_HEADER, title=_title(f"Filler {i}"))
+        SlideIR(
+            slide_index=start_index + i,
+            layout_type=LayoutType.SECTION_HEADER,
+            title=_title(f"Filler {i}"),
+        )
         for i in range(count)
     ]
 
@@ -72,12 +76,21 @@ def test_build_produces_openable_pptx_with_correct_slide_count(tmp_path):
     manifest = TemplateParser().parse(template_path)
 
     slides = [
-        SlideIR(slide_index=0, layout_type=LayoutType.TITLE_SLIDE, title=_title("Welcome"), components=[]),
+        SlideIR(
+            slide_index=0,
+            layout_type=LayoutType.TITLE_SLIDE,
+            title=_title("Welcome"),
+            components=[],
+        ),
         SlideIR(
             slide_index=1,
             layout_type=LayoutType.SECTION_HEADER,
             title=_title("Agenda"),
-            components=[BulletBlock(items=[BulletItem(text="Intro"), BulletItem(text="Results")])],
+            components=[
+                BulletBlock(
+                    items=[BulletItem(text="Intro"), BulletItem(text="Results")]
+                )
+            ],
         ),
         SlideIR(
             slide_index=2,
@@ -98,7 +111,12 @@ def test_build_produces_openable_pptx_with_correct_slide_count(tmp_path):
                 TableData(headers=["Metric", "Value"], rows=[["Speed", "Fast"]]),
             ],
         ),
-        SlideIR(slide_index=4, layout_type=LayoutType.BLANK, title=_title("Divider"), components=[]),
+        SlideIR(
+            slide_index=4,
+            layout_type=LayoutType.BLANK,
+            title=_title("Divider"),
+            components=[],
+        ),
         SlideIR(
             slide_index=5,
             layout_type=LayoutType.CONTENT_1COL,
@@ -127,7 +145,11 @@ def test_build_produces_openable_pptx_with_correct_slide_count(tmp_path):
             slide_index=8,
             layout_type=LayoutType.CONTENT_2COL,
             title=_title("Breakdown"),
-            components=[TableData(headers=["Region", "Sales"], rows=[["EU", "100"], ["US", "200"]])],
+            components=[
+                TableData(
+                    headers=["Region", "Sales"], rows=[["EU", "100"], ["US", "200"]]
+                )
+            ],
         ),
         SlideIR(
             slide_index=9,
@@ -139,7 +161,9 @@ def test_build_produces_openable_pptx_with_correct_slide_count(tmp_path):
             ],
         ),
     ]
-    ir = PresentationIR(variant="A", template_source_hash=manifest.source_hash, slides=slides)
+    ir = PresentationIR(
+        variant="A", template_source_hash=manifest.source_hash, slides=slides
+    )
 
     result = PptxBuilder().build(template_path, manifest, ir)
 
@@ -159,11 +183,15 @@ def test_image_placeholder_renders_even_without_picture_slot(tmp_path):
             slide_index=0,
             layout_type=LayoutType.TITLE_SLIDE,
             title=_title("No Picture Slot Here"),
-            components=[ImagePlaceholder(alt_text="a placeholder image", role="illustration")],
+            components=[
+                ImagePlaceholder(alt_text="a placeholder image", role="illustration")
+            ],
         ),
         *_filler_slides(1, 9),
     ]
-    ir = PresentationIR(variant="A", template_source_hash=manifest.source_hash, slides=slides)
+    ir = PresentationIR(
+        variant="A", template_source_hash=manifest.source_hash, slides=slides
+    )
 
     result = PptxBuilder().build(template_path, manifest, ir)
 
@@ -182,8 +210,10 @@ def test_semantic_visual_components_survive_pptx_roundtrip(tmp_path):
             title=_title("Процесс становится прозрачным"),
             components=[
                 ComparisonData(
-                    left_title="До", left_items=["Ручная сборка"],
-                    right_title="После", right_items=["Единый конвейер"],
+                    left_title="До",
+                    left_items=["Ручная сборка"],
+                    right_title="После",
+                    right_items=["Единый конвейер"],
                 )
             ],
         ),
@@ -216,7 +246,9 @@ def test_semantic_visual_components_survive_pptx_roundtrip(tmp_path):
         ),
         *_filler_slides(3, 7),
     ]
-    ir = PresentationIR(variant="A", template_source_hash=manifest.source_hash, slides=slides)
+    ir = PresentationIR(
+        variant="A", template_source_hash=manifest.source_hash, slides=slides
+    )
 
     result = PptxBuilder().build(template_path, manifest, ir)
     reopened = Presentation(result.pptx_path)
@@ -245,7 +277,9 @@ def test_duplicate_component_types_do_not_collide(tmp_path):
         ),
         *_filler_slides(1, 9),
     ]
-    ir = PresentationIR(variant="A", template_source_hash=manifest.source_hash, slides=slides)
+    ir = PresentationIR(
+        variant="A", template_source_hash=manifest.source_hash, slides=slides
+    )
 
     result = PptxBuilder().build(template_path, manifest, ir)
 
@@ -272,7 +306,9 @@ def test_reopened_file_has_no_repair_warning_indicators(tmp_path):
         )
         for i in range(10)
     ]
-    ir = PresentationIR(variant="B", template_source_hash=manifest.source_hash, slides=slides)
+    ir = PresentationIR(
+        variant="B", template_source_hash=manifest.source_hash, slides=slides
+    )
 
     result = PptxBuilder().build(template_path, manifest, ir)
 
@@ -286,8 +322,10 @@ def test_fallback_geometry_stays_within_asymmetric_layout_content_region(tmp_pat
     slide_height = manifest.slide_height_emu
 
     right_half_geometry = Geometry(
-        left_emu=int(slide_width * 0.55), top_emu=int(slide_height * 0.2),
-        width_emu=int(slide_width * 0.4), height_emu=int(slide_height * 0.6),
+        left_emu=int(slide_width * 0.55),
+        top_emu=int(slide_height * 0.2),
+        width_emu=int(slide_width * 0.4),
+        height_emu=int(slide_height * 0.6),
     )
     right_half_layout = LayoutManifest(
         layout_index=1,
@@ -314,7 +352,9 @@ def test_fallback_geometry_stays_within_asymmetric_layout_content_region(tmp_pat
         ),
         *_filler_slides(1, 9),
     ]
-    ir = PresentationIR(variant="A", template_source_hash=manifest.source_hash, slides=slides)
+    ir = PresentationIR(
+        variant="A", template_source_hash=manifest.source_hash, slides=slides
+    )
 
     result = PptxBuilder().build(template_path, asymmetric_manifest, ir)
 
