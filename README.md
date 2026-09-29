@@ -5,6 +5,11 @@ PPTX-шаблону. Сервис создаёт три варианта пре�
 audit issues, позволяет перегенерировать отдельный слайд и экспортирует
 PPTX/PDF/HTML.
 
+## Демо и материалы
+
+- Живой стенд: [lct.shmyaks.ru](https://lct.shmyaks.ru/)
+- Видео-демо и презентация проекта: [Яндекс Диск](https://disk.yandex.ru/d/weDXYJvfn0jHAw)
+
 ## Документация
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — пайплайн и границы слоёв;
