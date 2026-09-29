@@ -11,7 +11,6 @@ import {
   PURPOSES,
   orderVariants,
   plural,
-  projectTitle,
   variantAudience,
   variantLabel,
 } from "../ui";
@@ -214,11 +213,8 @@ export function ResultPage() {
             ← Запуск
           </Link>
           <div className="brand brand--compact">
-            <span className="logo" aria-hidden="true">
-              S
-            </span>
             <div>
-              <strong>{projectTitle(linked?.brief ?? "")}</strong>
+              <strong>Презентация</strong>
               <span>
                 {linked?.templateName || dna?.name || jobId.slice(0, 8)}
                 {purpose ? ` · ${purpose}` : ""}
