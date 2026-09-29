@@ -79,9 +79,11 @@ export async function startGeneration(input: {
   brief: string;
   slideCount: number;
   purpose: string;
+  documents?: File[];
 }) {
   const form = new FormData();
   form.append("template", input.file, input.file.name);
+  for (const doc of input.documents ?? []) form.append("documents", doc, doc.name);
   form.append("brief", input.brief);
   form.append("slide_count", String(input.slideCount));
   form.append("purpose", input.purpose);

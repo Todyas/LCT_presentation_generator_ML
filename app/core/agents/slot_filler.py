@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from pydantic import ValidationError
 
 from app.core.agents.grounding import ungrounded_numbers
@@ -56,30 +58,69 @@ def _outline_action_title(item: OutlineItem) -> str:
     return " ".join(words).rstrip(".,;:") + "…"
 
 
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+|;\s+|\s[—–]\s")
+
+
+def _norm(value: str) -> str:
+    return value.strip().strip(".,;:!?…").casefold()
+
+
+def _fallback_points(key_message: str, working_title: str, title: str) -> list[str]:
+    """Up to two short bullets derived from outline text, never equal to the title."""
+    pieces = [p.strip() for p in _SENTENCE_SPLIT.split(key_message) if p.strip()]
+    if len(pieces) < 2 and "," in key_message:
+        pieces = [p.strip() for p in key_message.split(",") if p.strip()]
+    candidates = [*pieces, working_title]
+    points: list[str] = []
+    seen = {_norm(title)}
+    for candidate in candidates:
+        text = _short_source_text(candidate)
+        if text and _norm(text) not in seen:
+            seen.add(_norm(text))
+            points.append(text)
+        if len(points) == 2:
+            break
+    return points
+
+
 def build_fallback_slide(item: OutlineItem, manifest: TemplateManifest) -> SlideIR:
-    """Build a source-only slide when the per-slide LLM exhausts its retries."""
+    """Build a source-only slide when the per-slide LLM exhausts its retries.
+
+    `content_hint` is an internal planning note, so it is never rendered.
+    """
     resolved_layout = manifest.find_layout_or_fallback(
         item.suggested_layout_type, item.slide_index
     )
-    title_text = _outline_action_title(item)
-    source_points: list[str] = []
-    for candidate in (item.content_hint,):
-        point = _short_source_text(candidate)
-        if (
-            point
-            and point.casefold() != title_text.casefold()
-            and point.casefold() not in {value.casefold() for value in source_points}
-        ):
-            source_points.append(point)
-    if not source_points:
-        source_points.append(_short_source_text(item.key_message))
+    key_message = " ".join(item.key_message.split())
+    sentences = [p for p in _SENTENCE_SPLIT.split(key_message) if p.strip()]
+    if len(sentences) > 1 and len(sentences[0]) <= 120:
+        title_text = sentences[0].strip().rstrip(".")
+        rest = key_message[len(sentences[0]) :].strip()
+    else:
+        title_text = _outline_action_title(item.model_copy(update={"key_message": key_message}))
+        rest = key_message
+    points = _fallback_points(rest, item.working_title, title_text)
+    if not points:
+        words = key_message.split()
+        half = len(words) // 2
+        if half >= 2:
+            points = [
+                p
+                for p in (
+                    _short_source_text(" ".join(words[:half])),
+                    _short_source_text(" ".join(words[half:])),
+                )
+                if _norm(p) != _norm(title_text)
+            ]
     return SlideIR(
         slide_index=item.slide_index,
         layout_type=resolved_layout.layout_type,
         title=TitleComponent(text=title_text, is_action_title=True),
-        components=[
-            BulletBlock(items=[BulletItem(text=point) for point in source_points])
-        ],
+        components=(
+            [BulletBlock(items=[BulletItem(text=point) for point in points])]
+            if points
+            else []
+        ),
     )
 
 

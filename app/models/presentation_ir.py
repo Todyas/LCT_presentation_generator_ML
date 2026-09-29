@@ -147,6 +147,8 @@ SlideComponent = Annotated[
 class SlideIR(BaseModel):
     slide_index: int = Field(ge=0)
     layout_type: LayoutType
+    # concrete template layout; takes priority over layout_type in the builder
+    layout_index: int | None = None
     title: TitleComponent
     components: list[SlideComponent] = Field(default_factory=list)
     speaker_notes: str = ""

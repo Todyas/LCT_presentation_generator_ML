@@ -167,6 +167,137 @@ def _inferred_slots(
     return result
 
 
+_GRID = 40
+_REGION_MIN_AREA = 0.25
+_FULL_BLEED = 0.85
+
+
+def _decoration_boxes(owner, slide_width: int, slide_height: int):
+    """Normalized (x0, y0, x1, y1) boxes of pictures, groups and big autoshapes."""
+    from pptx.enum.shapes import MSO_SHAPE_TYPE
+
+    boxes = []
+    for shape in owner.shapes:
+        if getattr(shape, "is_placeholder", False):
+            continue
+        try:
+            left, top = shape.left, shape.top
+            width, height = shape.width, shape.height
+        except (AttributeError, TypeError):
+            continue
+        if None in (left, top, width, height) or width <= 0 or height <= 0:
+            continue
+        x0, y0 = max(0.0, left / slide_width), max(0.0, top / slide_height)
+        x1 = min(1.0, (left + width) / slide_width)
+        y1 = min(1.0, (top + height) / slide_height)
+        if x1 <= x0 or y1 <= y0:
+            continue
+        area = (x1 - x0) * (y1 - y0)
+        kind = getattr(shape, "shape_type", None)
+        is_art = kind in (MSO_SHAPE_TYPE.PICTURE, MSO_SHAPE_TYPE.GROUP) or (
+            kind == MSO_SHAPE_TYPE.AUTO_SHAPE and area > 0.08
+        )
+        if not is_art:
+            continue
+        if area >= _FULL_BLEED:
+            continue  # full-bleed backdrop, not an obstacle
+        if y0 >= 0.94 and (y1 - y0) < 0.06:
+            continue  # footer chrome
+        boxes.append((x0, y0, x1, y1))
+    return boxes
+
+
+def _occupancy_grid(boxes) -> list[list[bool]]:
+    grid = [[False] * _GRID for _ in range(_GRID)]
+    cell = 1.0 / _GRID
+    for x0, y0, x1, y1 in boxes:
+        for row in range(_GRID):
+            oy = min(y1, (row + 1) * cell) - max(y0, row * cell)
+            if oy <= cell * 0.02:
+                continue
+            for col in range(_GRID):
+                ox = min(x1, (col + 1) * cell) - max(x0, col * cell)
+                if ox > cell * 0.02:
+                    grid[row][col] = True
+    return grid
+
+
+def _largest_free_rect(
+    grid: list[list[bool]], row_lo: int, row_hi: int, col_lo: int, col_hi: int
+) -> tuple[int, int, int, int] | None:
+    """Largest all-free rectangle in grid[row_lo:row_hi][col_lo:col_hi] (col, row, w, h)."""
+    heights = [0] * (col_hi - col_lo)
+    best: tuple[int, int, int, int] | None = None
+    best_area = 0
+    for row in range(row_lo, row_hi):
+        for i, col in enumerate(range(col_lo, col_hi)):
+            heights[i] = 0 if grid[row][col] else heights[i] + 1
+        for i in range(len(heights)):
+            if heights[i] == 0:
+                continue
+            min_h = heights[i]
+            for j in range(i, len(heights)):
+                if heights[j] == 0:
+                    break
+                min_h = min(min_h, heights[j])
+                area = min_h * (j - i + 1)
+                if area > best_area:
+                    best_area = area
+                    best = (col_lo + i, row - min_h + 1, j - i + 1, min_h)
+    return best
+
+
+def compute_content_region(
+    layout, master, slots: list[LayoutSlot], slide_width: int, slide_height: int
+) -> tuple[Geometry | None, float]:
+    """Return (content_region, decoration_coverage) for one slide layout."""
+    boxes = _decoration_boxes(layout, slide_width, slide_height)
+    if layout._element.get("showMasterSp") != "0":
+        boxes += _decoration_boxes(master, slide_width, slide_height)
+    grid = _occupancy_grid(boxes)
+    coverage = sum(cell for row in grid for cell in row) / (_GRID * _GRID)
+
+    title = next(
+        (
+            slot
+            for slot in slots
+            if slot.placeholder_type == PlaceholderType.TITLE
+            and not slot.inferred
+            and slot.normalized.y < 0.45
+        ),
+        None,
+    ) or next(
+        (
+            slot
+            for slot in slots
+            if slot.placeholder_type == PlaceholderType.TITLE
+            and slot.normalized.y < 0.45
+        ),
+        None,
+    )
+    top_frac = (
+        min(0.5, title.normalized.y + title.normalized.h) + 0.01 if title else 0.12
+    )
+    row_lo = min(_GRID - 1, int(top_frac * _GRID + 0.999))
+    row_hi = int(0.92 * _GRID)
+    col_lo, col_hi = int(0.05 * _GRID), int(0.95 * _GRID)
+    rect = _largest_free_rect(grid, row_lo, row_hi, col_lo, col_hi)
+    if rect is None:
+        return None, coverage
+    col, row, cols, rows = rect
+    if cols * rows / (_GRID * _GRID) < _REGION_MIN_AREA:
+        return None, coverage
+    return (
+        Geometry(
+            left_emu=int(col / _GRID * slide_width),
+            top_emu=int(row / _GRID * slide_height),
+            width_emu=int(cols / _GRID * slide_width),
+            height_emu=int(rows / _GRID * slide_height),
+        ),
+        coverage,
+    )
+
+
 def _resolved_placeholder_box(placeholder, master) -> tuple[int, int, int, int] | None:
     values = (placeholder.left, placeholder.top, placeholder.width, placeholder.height)
     if None not in values:
@@ -197,7 +328,33 @@ def _map_placeholder_type(ph_type: int | None) -> PlaceholderType:
     return _PLACEHOLDER_TYPE_MAP.get(ph_type, PlaceholderType.OTHER)
 
 
-def _read_theme_bytes(pptx_path: str) -> bytes:
+def _master_theme_bytes(prs) -> bytes:
+    """Theme XML of the slide master that owns the most layouts.
+
+    Templates frequently ship an unused Office default as theme1.xml while the
+    real master points at theme2.xml, so the theme must be resolved through the
+    master's own relationship instead of a hardcoded part name.
+    """
+    from pptx.opc.constants import RELATIONSHIP_TYPE as RT
+
+    masters = sorted(
+        prs.slide_masters, key=lambda master: len(master.slide_layouts), reverse=True
+    )
+    for master in masters:
+        try:
+            blob = master.part.part_related_by(RT.THEME).blob
+        except (KeyError, AttributeError):
+            continue
+        if blob:
+            return blob
+    return b""
+
+
+def _read_theme_bytes(pptx_path: str, prs=None) -> bytes:
+    if prs is not None:
+        blob = _master_theme_bytes(prs)
+        if blob:
+            return blob
     with zipfile.ZipFile(pptx_path) as zf:
         if _THEME_PATH not in zf.namelist():
             return b""
@@ -210,7 +367,7 @@ class TemplateParser:
         source_hash = hashlib.sha256(file_bytes).hexdigest()
 
         cache_dir = Path(".cache")
-        cache_path = cache_dir / f"{source_hash}.v3.manifest.json"
+        cache_path = cache_dir / f"{source_hash}.v4.manifest.json"
         cache_writable = True
         try:
             cache_dir.mkdir(exist_ok=True)
@@ -231,7 +388,7 @@ class TemplateParser:
         except Exception as exc:
             raise TemplateParseError(f"cannot open pptx: {exc}") from exc
 
-        theme_bytes = _read_theme_bytes(pptx_path)
+        theme_bytes = _read_theme_bytes(pptx_path, prs)
         colors = ThemeColors(**extract_theme_colors(theme_bytes))
         major_latin, minor_latin = extract_font_scheme(theme_bytes)
         fonts = FontScheme(major_latin=major_latin, minor_latin=minor_latin)
@@ -239,6 +396,7 @@ class TemplateParser:
 
         layouts: list[LayoutManifest] = []
         layout_index_by_partname: dict[str, int] = {}
+        layout_owners: list[tuple] = []
         layout_index = 0
         # prs.slide_layouts only exposes the first slide master's layouts; a corporate
         # template's real content layouts often live on additional masters, so every
@@ -292,6 +450,7 @@ class TemplateParser:
                     )
                 )
                 layout_index_by_partname[str(layout.part.partname)] = layout_index
+                layout_owners.append((layout, master))
                 layout_index += 1
 
         # Finished example slides are valuable design references even when their
@@ -323,6 +482,23 @@ class TemplateParser:
                 if not overlaps:
                     existing.append(slot)
             target.layout_type = classify_layout(target.layout_name, target.slots)
+
+        for layout_manifest, (pptx_layout, pptx_master) in zip(layouts, layout_owners):
+            try:
+                region, coverage = compute_content_region(
+                    pptx_layout,
+                    pptx_master,
+                    layout_manifest.slots,
+                    prs.slide_width,
+                    prs.slide_height,
+                )
+            except Exception:  # noqa: BLE001 - region is best-effort
+                logger.warning(
+                    "content region failed for layout %s", layout_manifest.layout_name
+                )
+                continue
+            layout_manifest.content_region = region
+            layout_manifest.decoration_coverage = round(coverage, 4)
 
         manifest = TemplateManifest(
             source_hash=source_hash,

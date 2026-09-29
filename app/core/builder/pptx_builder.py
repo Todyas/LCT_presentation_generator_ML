@@ -10,6 +10,7 @@ from pptx.slide import Slide, SlideLayout
 
 from app.core.builder.shape_factory import (
     BBox,
+    ensure_readable_text,
     render_bullet_component,
     render_chart_component,
     render_comparison,
@@ -32,6 +33,7 @@ from app.models.presentation_ir import (
     PresentationIR,
     ProcessData,
     SlideComponent,
+    SlideIR,
     TableData,
 )
 from app.models.template_manifest import (
@@ -85,6 +87,86 @@ _CHROME_PLACEHOLDER_TYPES = frozenset(
 )
 
 
+_MIN_INFERRED_W = 0.30
+_MIN_INFERRED_H = 0.15
+_MIN_EXPLICIT_W = 0.18
+_MIN_EXPLICIT_H = 0.10
+_MIN_COLUMN_RATIO = 0.18
+_MIN_GEOMETRY_H_EMU = 400_000
+
+
+def _slot_usable(slot, layout: LayoutManifest) -> bool:
+    n = slot.normalized
+    if not slot.inferred:
+        return n.w >= _MIN_EXPLICIT_W and n.h >= _MIN_EXPLICIT_H
+    if n.w < _MIN_INFERRED_W or n.h < _MIN_INFERRED_H:
+        return False
+    region = layout.content_region
+    if region is None:
+        return True
+    g = slot.geometry
+    iw = min(g.right_emu, region.right_emu) - max(g.left_emu, region.left_emu)
+    ih = min(g.bottom_emu, region.bottom_emu) - max(g.top_emu, region.top_emu)
+    if iw <= 0 or ih <= 0:
+        return False
+    return iw * ih >= 0.6 * g.width_emu * g.height_emu
+
+
+def _group_weight(group: list[SlideComponent]) -> float:
+    if isinstance(group[0], MetricCard):
+        return 0.45
+    if isinstance(group[0], ImagePlaceholder):
+        return 0.8
+    return 1.0
+
+
+def _region_geometry(
+    layout: LayoutManifest, cursor_bottom_emu: int, share: float, remaining: int
+) -> Geometry | None:
+    region = layout.content_region
+    if region is None:
+        return None
+    top = region.top_emu
+    if (
+        cursor_bottom_emu > top
+        and region.bottom_emu - cursor_bottom_emu >= 0.2 * region.height_emu
+    ):
+        top = cursor_bottom_emu
+    available = region.bottom_emu - top - SLIDE_MARGIN_EMU * (remaining - 1)
+    height = min(int(available * share), region.bottom_emu - top)
+    if height <= 0:
+        return None
+    return Geometry(
+        left_emu=region.left_emu,
+        top_emu=top,
+        width_emu=region.width_emu,
+        height_emu=max(height, min(_MIN_GEOMETRY_H_EMU, region.bottom_emu - top)),
+    )
+
+
+def _clear_title(geometry: Geometry, title_box: BBox | None) -> Geometry:
+    if title_box is None:
+        return geometry
+    overlaps_x = (
+        geometry.left_emu < title_box.x + title_box.w
+        and geometry.right_emu > title_box.x
+    )
+    overlaps_y = (
+        geometry.top_emu < title_box.y + title_box.h
+        and geometry.bottom_emu > title_box.y
+    )
+    if not (overlaps_x and overlaps_y):
+        return geometry
+    top = title_box.y + title_box.h + SLIDE_MARGIN_EMU
+    height = max(geometry.bottom_emu - top, _MIN_GEOMETRY_H_EMU)
+    return Geometry(
+        left_emu=geometry.left_emu,
+        top_emu=top,
+        width_emu=geometry.width_emu,
+        height_emu=height,
+    )
+
+
 def _group_components(
     components: list[SlideComponent], pair_bullet_blocks: bool
 ) -> list[list[SlideComponent]]:
@@ -113,6 +195,14 @@ def _group_components(
     return groups
 
 
+def _layout_for_slide(manifest: TemplateManifest, slide_ir: SlideIR) -> LayoutManifest:
+    if slide_ir.layout_index is not None:
+        for candidate in manifest.layouts:
+            if candidate.layout_index == slide_ir.layout_index:
+                return candidate
+    return manifest.find_layout_or_fallback(slide_ir.layout_type, slide_ir.slide_index)
+
+
 class PptxBuilder:
     def build(
         self, template_path: str, manifest: TemplateManifest, ir: PresentationIR
@@ -123,9 +213,7 @@ class PptxBuilder:
 
         bbox_map: dict[int, dict[str, BBox]] = {}
         for slide_ir in ir.slides:
-            layout = manifest.find_layout_or_fallback(
-                slide_ir.layout_type, slide_ir.slide_index
-            )
+            layout = _layout_for_slide(manifest, slide_ir)
             pptx_layout = all_layouts[layout.layout_index]
             slide = prs.slides.add_slide(pptx_layout)
 
@@ -196,11 +284,20 @@ class PptxBuilder:
                 for s in layout.slots
                 if s.placeholder_type == PlaceholderType.BODY
                 and s.placeholder_idx not in used_placeholder_idxs
+                and _slot_usable(s, layout)
             )
             pair_bullet_blocks = bullet_block_count == 2 and available_body_slots < 2
 
             component_index = 0
-            for group in _group_components(slide_ir.components, pair_bullet_blocks):
+            title_box = shape_boxes.get("title")
+            groups = _group_components(slide_ir.components, pair_bullet_blocks)
+            weights = [_group_weight(g) for g in groups]
+            for group_index, group in enumerate(groups):
+                region_kwargs = {
+                    "title_box": title_box,
+                    "remaining": len(groups) - group_index,
+                    "share": weights[group_index] / sum(weights[group_index:]),
+                }
                 if isinstance(group[0], MetricCard):
                     geometry, slot_used, placeholder_shape = self._resolve_geometry(
                         slide,
@@ -209,6 +306,7 @@ class PptxBuilder:
                         used_placeholder_idxs,
                         prs,
                         cursor_bottom_emu,
+                        **region_kwargs,
                     )
                     if slot_used is not None:
                         used_placeholder_idxs.add(slot_used)
@@ -221,6 +319,7 @@ class PptxBuilder:
                         manifest.colors,
                         font_path,
                         manifest.fonts.minor_latin,
+                        slide_width_emu=manifest.slide_width_emu,
                     )
                     for bbox in boxes:
                         shape_boxes[f"component_{component_index}"] = bbox
@@ -241,9 +340,13 @@ class PptxBuilder:
                         used_placeholder_idxs,
                         prs,
                         cursor_bottom_emu,
+                        **region_kwargs,
                     )
                     for block, col_geometry in zip(
-                        group, self._split_into_columns(container_geometry)
+                        group,
+                        self._split_into_columns(
+                            container_geometry, manifest.slide_width_emu
+                        ),
                     ):
                         bbox = render_bullet_component(
                             slide,
@@ -274,6 +377,7 @@ class PptxBuilder:
                     used_placeholder_idxs,
                     prs,
                     cursor_bottom_emu,
+                    **region_kwargs,
                 )
                 if slot_used is not None:
                     used_placeholder_idxs.add(slot_used)
@@ -286,6 +390,12 @@ class PptxBuilder:
                 cursor_bottom_emu = bbox.y + bbox.h + SLIDE_MARGIN_EMU
 
             self._purge_unused_placeholders(slide, used_placeholder_idxs)
+            ensure_readable_text(
+                slide,
+                manifest.colors,
+                manifest.slide_width_emu,
+                manifest.slide_height_emu,
+            )
             bbox_map[slide_ir.slide_index] = shape_boxes
 
         output_path = str(Path(template_path).with_name(f"built_{ir.variant}.pptx"))
@@ -297,8 +407,28 @@ class PptxBuilder:
             layout for master in prs.slide_masters for layout in master.slide_layouts
         ]
 
-    def _split_into_columns(self, geometry: Geometry) -> tuple[Geometry, Geometry]:
+    def _split_into_columns(
+        self, geometry: Geometry, slide_width_emu: int | None = None
+    ) -> tuple[Geometry, Geometry]:
         col_width = (geometry.width_emu - _COLUMN_GAP_EMU) // 2
+        if (
+            slide_width_emu is not None
+            and col_width < slide_width_emu * _MIN_COLUMN_RATIO
+        ):
+            half = (geometry.height_emu - _COLUMN_GAP_EMU) // 2
+            top_part = Geometry(
+                left_emu=geometry.left_emu,
+                top_emu=geometry.top_emu,
+                width_emu=geometry.width_emu,
+                height_emu=half,
+            )
+            bottom_part = Geometry(
+                left_emu=geometry.left_emu,
+                top_emu=geometry.top_emu + half + _COLUMN_GAP_EMU,
+                width_emu=geometry.width_emu,
+                height_emu=half,
+            )
+            return top_part, bottom_part
         left_col = Geometry(
             left_emu=geometry.left_emu,
             top_emu=geometry.top_emu,
@@ -356,18 +486,79 @@ class PptxBuilder:
         used_placeholder_idxs: set[int],
         prs: PptxPresentation,
         cursor_bottom_emu: int,
+        title_box: BBox | None = None,
+        share: float = 1.0,
+        remaining: int = 1,
     ) -> tuple[Geometry, int | None, BaseShape | None]:
+        from_slots = self._resolve_from_slots(
+            slide, component, layout, used_placeholder_idxs, prs, cursor_bottom_emu
+        )
+        if from_slots is not None:
+            geometry, slot_idx, shape = from_slots
+            slot = next(
+                (s for s in layout.slots if s.placeholder_idx == slot_idx), None
+            )
+            if slot is None or slot.inferred:
+                geometry = _clear_title(geometry, title_box)
+            return geometry, slot_idx, shape
+
+        claimed = self._claim_unusable_body_slot(
+            slide, layout, used_placeholder_idxs
+        )
+        region_geometry = _region_geometry(layout, cursor_bottom_emu, share, remaining)
+        if region_geometry is not None:
+            return _clear_title(region_geometry, title_box), claimed[0], claimed[1]
+        if isinstance(
+            component,
+            (ComparisonData, ProcessData, IconListData, ChartData, TableData),
+        ):
+            geometry = self._compute_visual_geometry(layout, prs, cursor_bottom_emu)
+        else:
+            geometry = self._compute_fallback_geometry(layout, prs, cursor_bottom_emu)
+        return _clear_title(geometry, title_box), claimed[0], claimed[1]
+
+    def _claim_unusable_body_slot(
+        self,
+        slide: Slide,
+        layout: LayoutManifest,
+        used_placeholder_idxs: set[int],
+    ) -> tuple[int | None, BaseShape | None]:
+        # claim an explicit body placeholder we chose not to use so the caller can
+        # drop it and its prompt text does not show through
+        for slot in layout.slots:
+            if (
+                slot.placeholder_type == PlaceholderType.BODY
+                and not slot.inferred
+                and slot.placeholder_idx not in used_placeholder_idxs
+            ):
+                shape = self._find_placeholder_by_idx(slide, slot.placeholder_idx)
+                if shape is not None:
+                    return slot.placeholder_idx, shape
+        return None, None
+
+    def _resolve_from_slots(
+        self,
+        slide: Slide,
+        component: SlideComponent,
+        layout: LayoutManifest,
+        used_placeholder_idxs: set[int],
+        prs: PptxPresentation,
+        cursor_bottom_emu: int,
+    ) -> tuple[Geometry, int | None, BaseShape | None] | None:
         wanted_type = _COMPONENT_TO_PLACEHOLDER_TYPE.get(type(component))
         visual_component = isinstance(
             component,
             (ComparisonData, ProcessData, IconListData, ChartData, TableData),
         )
+        free_slots = [
+            slot
+            for slot in layout.slots
+            if slot.placeholder_idx not in used_placeholder_idxs
+            and _slot_usable(slot, layout)
+        ]
         if visual_component:
             matching_slots = [
-                slot
-                for slot in layout.slots
-                if slot.placeholder_type == wanted_type
-                and slot.placeholder_idx not in used_placeholder_idxs
+                s for s in free_slots if s.placeholder_type == wanted_type
             ]
             # Real wide chart/table placeholders are useful. Narrow inferred
             # sample boxes are not: they caused five-step diagrams to be
@@ -381,10 +572,7 @@ class PptxBuilder:
                         self._find_placeholder_by_idx(slide, slot.placeholder_idx),
                     )
             body_slots = [
-                slot
-                for slot in layout.slots
-                if slot.placeholder_type == PlaceholderType.BODY
-                and slot.placeholder_idx not in used_placeholder_idxs
+                s for s in free_slots if s.placeholder_type == PlaceholderType.BODY
             ]
             explicit_body_slots = [slot for slot in body_slots if not slot.inferred]
             if explicit_body_slots:
@@ -403,24 +591,10 @@ class PptxBuilder:
                     first.placeholder_idx,
                     self._find_placeholder_by_idx(slide, first.placeholder_idx),
                 )
-            claimed = (
-                body_slots[0]
-                if body_slots
-                else (matching_slots[0] if matching_slots else None)
-            )
-            return (
-                self._compute_visual_geometry(layout, prs, cursor_bottom_emu),
-                claimed.placeholder_idx if claimed is not None else None,
-                self._find_placeholder_by_idx(slide, claimed.placeholder_idx)
-                if claimed is not None
-                else None,
-            )
+            return None
         if wanted_type is not None:
-            for slot in layout.slots:
-                if (
-                    slot.placeholder_type == wanted_type
-                    and slot.placeholder_idx not in used_placeholder_idxs
-                ):
+            for slot in free_slots:
+                if slot.placeholder_type == wanted_type:
                     placeholder_shape = self._find_placeholder_by_idx(
                         slide, slot.placeholder_idx
                     )
@@ -430,10 +604,7 @@ class PptxBuilder:
         # Reusing that full content region preserves the template's safe margins and
         # avoids stacking a shallow fallback box immediately below the title.
         body_slots = [
-            slot
-            for slot in layout.slots
-            if slot.placeholder_type == PlaceholderType.BODY
-            and slot.placeholder_idx not in used_placeholder_idxs
+            s for s in free_slots if s.placeholder_type == PlaceholderType.BODY
         ]
         if body_slots:
             first = body_slots[0]
@@ -456,12 +627,7 @@ class PptxBuilder:
                     placeholder_shape,
                 )
             return first.geometry, first.placeholder_idx, placeholder_shape
-
-        return (
-            self._compute_fallback_geometry(layout, prs, cursor_bottom_emu),
-            None,
-            None,
-        )
+        return None
 
     def _compute_visual_geometry(
         self, layout: LayoutManifest, prs: PptxPresentation, cursor_bottom_emu: int
@@ -486,6 +652,7 @@ class PptxBuilder:
             s
             for s in layout.slots
             if s.placeholder_type not in _CHROME_PLACEHOLDER_TYPES
+            and _slot_usable(s, layout)
         ]
         if content_slots:
             left = min(s.geometry.left_emu for s in content_slots)

@@ -15,7 +15,7 @@ from app.core.auditor.geometry_audit import BBox, run_geometry_audit
 from app.core.auditor.semantic_audit import run_semantic_audit
 from app.core.auditor.visual_audit import run_visual_variety_audit
 from app.core.builder.pptx_builder import BuildResult
-from app.core.builder.shape_factory import _background_hex, _fill_hex
+from app.core.builder.shape_factory import _background_hex, _clr_map, _fill_hex
 from app.models.audit_report import AuditReport
 from app.models.presentation_ir import PresentationIR
 from app.models.template_manifest import TemplateManifest
@@ -75,8 +75,10 @@ def _iter_text_shape_colors(
     build_result: BuildResult, ir: PresentationIR, manifest: TemplateManifest
 ) -> Iterator[tuple[int, str, str, str, bool]]:
     prs = Presentation(build_result.pptx_path)
-    default_color = manifest.colors.dk1
     for slide_index, slide in enumerate(prs.slides):
+        default_color = getattr(
+            manifest.colors, _clr_map(slide.slide_layout.slide_master)["tx1"]
+        )
         slide_background = _background_hex(
             slide,
             manifest.colors,

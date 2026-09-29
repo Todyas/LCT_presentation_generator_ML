@@ -67,12 +67,12 @@ def test_second_parse_is_a_cache_hit_and_does_not_reopen_the_pptx(
     assert first == second
 
 
-def test_cache_file_name_is_versioned_with_v3(tmp_cwd, generated_minimal_template):
+def test_cache_file_name_is_versioned_with_v4(tmp_cwd, generated_minimal_template):
     TemplateParser().parse(generated_minimal_template)
 
     cache_files = list(Path(".cache").glob("*.manifest.json"))
     assert len(cache_files) == 1
-    assert ".v3.manifest.json" in cache_files[0].name
+    assert ".v4.manifest.json" in cache_files[0].name
 
 
 def test_parse_succeeds_even_when_the_cache_directory_is_not_writable(

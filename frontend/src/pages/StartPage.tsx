@@ -8,6 +8,7 @@ import { EXAMPLE_BRIEF, PURPOSES, formatBytes, type PurposeId } from "../ui";
 
 const SLIDE_MIN = 10;
 const SLIDE_MAX = 15;
+const DOC_MAX = 10;
 
 export function StartPage() {
   const navigate = useNavigate();
@@ -27,6 +28,9 @@ export function StartPage() {
       ? String(session.slideCount)
       : "12",
   );
+  const [docs, setDocs] = useState<File[]>([]);
+  const [docsOver, setDocsOver] = useState(false);
+  const [docsError, setDocsError] = useState("");
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState("");
   const [stage, setStage] = useState("queued");
@@ -70,6 +74,18 @@ export function StartPage() {
     }
   }
 
+  function addDocs(list: FileList | File[]) {
+    const incoming = Array.from(list);
+    const valid = incoming.filter((item) => /\.(pdf|md)$/i.test(item.name));
+    const known = new Set(docs.map((item) => `${item.name}:${item.size}`));
+    const fresh = valid.filter((item) => !known.has(`${item.name}:${item.size}`));
+    const next = [...docs, ...fresh].slice(0, DOC_MAX);
+    setDocs(next);
+    if (valid.length < incoming.length) setDocsError("Подходят только файлы .pdf и .md");
+    else if (docs.length + fresh.length > DOC_MAX) setDocsError(`Не больше ${DOC_MAX} документов`);
+    else setDocsError("");
+  }
+
   function clearFile() {
     setFile(null);
     setDna(null);
@@ -94,6 +110,7 @@ export function StartPage() {
         brief: brief.trim(),
         slideCount: parsedSlideCount,
         purpose,
+        documents: docs,
       });
       setSession({
         jobId,
@@ -227,6 +244,64 @@ export function StartPage() {
                 rows={6}
                 maxLength={5000}
               />
+            </article>
+
+            <article className="card">
+              <div className="card__head">
+                <h2>Документы</h2>
+                <span className="card__hint">PDF, MD · до {DOC_MAX}</span>
+              </div>
+              <div
+                className={`dropzone dropzone--small${docsOver ? " is-over" : ""}`}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  setDocsOver(true);
+                }}
+                onDragLeave={() => setDocsOver(false)}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  setDocsOver(false);
+                  addDocs(event.dataTransfer.files);
+                }}
+              >
+                <p>Перетащите файлы сюда — факты и цифры из них попадут в презентацию</p>
+                <div className="dropzone__actions">
+                  <label className="btn btn--secondary">
+                    Выбрать файлы
+                    <input
+                      type="file"
+                      accept=".pdf,.md,application/pdf,text/markdown"
+                      multiple
+                      hidden
+                      disabled={running}
+                      onChange={(event) => {
+                        if (event.target.files) addDocs(event.target.files);
+                        event.target.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+              {docsError && <p className="form-error">{docsError}</p>}
+              {docs.length > 0 && (
+                <ul className="doc-list">
+                  {docs.map((doc) => (
+                    <li key={`${doc.name}:${doc.size}`}>
+                      <span className="doc-list__name">{doc.name}</span>
+                      <span className="doc-list__size">{formatBytes(doc.size)}</span>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        aria-label={`Убрать ${doc.name}`}
+                        disabled={running}
+                        onClick={() => setDocs((current) => current.filter((item) => item !== doc))}
+                      >
+                        ×
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </article>
 
             <article className="card">

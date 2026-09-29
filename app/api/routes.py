@@ -38,6 +38,13 @@ from app.api.schemas import (
 from app.config import Settings, get_settings
 from app.core.parser.template_parser import TemplateParser
 from app.models.template_manifest import TemplateManifest
+from app.pipeline.documents import (
+    SOURCES_FILENAME,
+    DocumentError,
+    SourceDocument,
+    build_source_context,
+    extract_document_text,
+)
 from app.pipeline.jobs import JobStatus, JobStore, JobType, SlideRevisionStore
 from app.pipeline.service import run_generation_job, run_revision_job
 
@@ -84,6 +91,31 @@ def _validate_pptx_upload(raw_bytes: bytes, max_bytes: int) -> None:
                 )
     except zipfile.BadZipFile:
         raise HTTPException(422, "not a valid .pptx file (not a zip archive)")
+
+
+async def _read_source_documents(
+    uploads: list[UploadFile], settings: Settings
+) -> list[SourceDocument]:
+    uploads = [item for item in uploads if item.filename]
+    if len(uploads) > settings.max_source_documents:
+        raise HTTPException(
+            422, f"максимум {settings.max_source_documents} документов за раз"
+        )
+    documents: list[SourceDocument] = []
+    for upload in uploads:
+        raw_bytes = await upload.read()
+        if len(raw_bytes) > settings.max_upload_bytes:
+            raise HTTPException(
+                413, f"{upload.filename}: файл больше {settings.max_upload_bytes} байт"
+            )
+        try:
+            text = await asyncio.to_thread(
+                extract_document_text, upload.filename or "", raw_bytes
+            )
+        except DocumentError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        documents.append(SourceDocument(filename=upload.filename or "", text=text))
+    return documents
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -221,6 +253,7 @@ async def generate(
     settings: Annotated[Settings, Depends(get_settings)],
     template: Annotated[UploadFile, File()],
     brief: Annotated[str, Form(min_length=10, max_length=5000)],
+    documents: Annotated[list[UploadFile] | None, File()] = None,
     slide_count: Annotated[int, Form(ge=10, le=15)] = 12,
     purpose: Annotated[str, Form()] = "project",
     language: Annotated[str, Form()] = "ru",
@@ -228,6 +261,7 @@ async def generate(
 ) -> JobCreatedResponse:
     raw_bytes = await template.read()
     _validate_pptx_upload(raw_bytes, settings.max_upload_bytes)
+    source_documents = await _read_source_documents(documents or [], settings)
 
     job = job_store.create(
         template_filename=template.filename or "template.pptx",
@@ -241,6 +275,11 @@ async def generate(
     storage_dir.mkdir(parents=True, exist_ok=True)
     template_path = storage_dir / "template.pptx"
     template_path.write_bytes(raw_bytes)
+    if source_documents:
+        (storage_dir / SOURCES_FILENAME).write_text(
+            build_source_context(source_documents, settings.max_source_chars),
+            encoding="utf-8",
+        )
     job_store.update(job.job_id, template_path=str(template_path))
 
     _enqueue_job(
