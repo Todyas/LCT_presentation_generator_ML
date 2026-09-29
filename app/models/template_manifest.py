@@ -69,6 +69,10 @@ class LayoutManifest(BaseModel):
     layout_name: str
     layout_type: LayoutType
     slots: list[LayoutSlot]
+    # largest free rectangle for body content (below the title, clear of decoration)
+    content_region: Geometry | None = None
+    # 0..1 share of the slide covered by layout/master pictures, groups and large shapes
+    decoration_coverage: float = 0.0
 
     def slot_by_type(self, t: PlaceholderType) -> LayoutSlot | None:
         return next((s for s in self.slots if s.placeholder_type == t), None)

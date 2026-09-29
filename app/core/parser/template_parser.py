@@ -210,7 +210,7 @@ class TemplateParser:
         source_hash = hashlib.sha256(file_bytes).hexdigest()
 
         cache_dir = Path(".cache")
-        cache_path = cache_dir / f"{source_hash}.v3.manifest.json"
+        cache_path = cache_dir / f"{source_hash}.v4.manifest.json"
         cache_writable = True
         try:
             cache_dir.mkdir(exist_ok=True)
