@@ -145,6 +145,12 @@ p { line-height: 1.45; }
 .dropzone p { margin: 0 auto; max-width: 46ch; color: var(--muted); font-size: 14px; }
 .dropzone__actions { display: flex; justify-content: center; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
 .dropzone__status { margin-top: 12px; color: var(--blue); font-weight: 700; font-size: 13px; }
+.dropzone--small { padding: 16px 18px; }
+.dropzone--small .dropzone__actions { margin-top: 10px; }
+.doc-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
+.doc-list li { display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fbfcfe; font-size: 13px; }
+.doc-list__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.doc-list__size { color: var(--muted); }
 .file-card { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: #fbfcfe; }
 .file-card__icon {
   width: 48px; height: 48px; border-radius: 10px; background: var(--blue); color: #fff;

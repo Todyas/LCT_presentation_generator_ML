@@ -78,6 +78,7 @@ Content-Type: multipart/form-data
 
 template=<pptx>
 brief=<text>
+documents=<pdf или md>   # необязательно, повторяется, до 10 файлов
 slide_count=12
 purpose=project
 language=ru

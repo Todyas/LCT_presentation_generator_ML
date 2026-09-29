@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from redis.asyncio import Redis
 
 from app.config import Settings
 from app.models.presentation_ir import SlideIR
+from app.pipeline.documents import brief_with_sources
 from app.pipeline.jobs import JobStatus, JobStore, JobType, SlideRevisionStore
 from app.pipeline.orchestrator import (
     Dependencies,
@@ -13,6 +15,12 @@ from app.pipeline.orchestrator import (
     rebuild_variant_with_slide,
     revise_variant_slide,
 )
+
+
+def _brief_for(job) -> str:
+    if not job.template_path:
+        return job.brief
+    return brief_with_sources(job.brief, Path(job.template_path).parent)
 
 
 def _audit_for_slide(variant_result, slide_index: int) -> dict:
@@ -82,7 +90,7 @@ async def run_generation_job(job_id: str, settings: Settings) -> None:
                 store.update(job_id, stage=stage, progress=progress)
 
         generation_brief = (
-            f"{job.brief}\n\nКонтекст презентации: назначение={job.purpose}; "
+            f"{_brief_for(job)}\n\nКонтекст презентации: назначение={job.purpose}; "
             f"язык={job.language}; стиль={job.style}."
         )
         result = await generate_deck(
@@ -230,7 +238,7 @@ async def run_revision_job(job_id: str, settings: Settings) -> None:
                     variant_result=variant,
                     slide_position=child.slide_position,
                     replacement_slide=replacement,
-                    brief=parent.brief,
+                    brief=_brief_for(parent),
                     template_path=parent.template_path,
                     manifest=manifest,
                     deps=deps,
@@ -241,7 +249,7 @@ async def run_revision_job(job_id: str, settings: Settings) -> None:
                 revised = await revise_variant_slide(
                     variant_result=variant,
                     slide_position=child.slide_position,
-                    brief=parent.brief,
+                    brief=_brief_for(parent),
                     instructions=correction_prompt,
                     template_path=parent.template_path,
                     manifest=manifest,
