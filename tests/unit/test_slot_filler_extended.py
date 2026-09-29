@@ -389,14 +389,6 @@ def test_fallback_slide_keeps_the_outline_items_slide_index():
     assert slide.slide_index == 11
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG: when content_hint falls back to key_message (OutlineItem's "
-    "empty-content_hint validator) and key_message is <=15 words, "
-    "build_fallback_slide's dedup check only guards the first source-point "
-    "candidate, not the final fallback append (slot_filler.py:74-75), so "
-    "the single bullet ends up identical to the title.",
-)
 def test_fallback_slide_never_duplicates_title_as_the_only_bullet():
     item = OutlineItem(
         slide_index=2,

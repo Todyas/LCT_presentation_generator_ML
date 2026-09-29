@@ -25,11 +25,13 @@ from app.models.audit_report import AuditReport
 from app.models.outline import Outline
 from app.models.presentation_ir import PresentationIR, SlideIR
 from app.models.template_manifest import TemplateManifest
+from app.pipeline.layout_assignment import assign_layouts, pick_alternative_layout
 
 logger = logging.getLogger(__name__)
 
 VARIANTS: tuple[Literal["A", "B", "C"], ...] = ("A", "B", "C")
 ProgressCallback = Callable[[str, int], None]
+_CHANGE_LAYOUT_MARKER = "Подбери другой подходящий макет"
 
 
 class PipelineTimeoutError(Exception):
@@ -181,6 +183,7 @@ async def _build_variant(
             variant=variant, template_source_hash=manifest.source_hash, slides=slides
         )
         ir = apply_visual_policy(ir)
+        ir = assign_layouts(ir, manifest)
 
         if progress_callback:
             progress_callback("building_variants", 60)
@@ -274,6 +277,7 @@ async def revise_variant_slide(
         template_path=template_path,
         manifest=manifest,
         deps=deps,
+        instructions=instructions,
     )
 
 
@@ -286,6 +290,7 @@ async def rebuild_variant_with_slide(
     template_path: str,
     manifest: TemplateManifest,
     deps: Dependencies,
+    instructions: str = "",
 ) -> VariantResult:
     """Rebuild a variant after replacing one semantic slide."""
 
@@ -295,8 +300,14 @@ async def rebuild_variant_with_slide(
     if slide_position < 1 or slide_position > len(ir.slides):
         raise IndexError(f"slide position {slide_position} is out of range")
     slides = list(ir.slides)
+    old_slide = slides[slide_position - 1]
+    layout_index = old_slide.layout_index
+    if _CHANGE_LAYOUT_MARKER in instructions:
+        layout_index = pick_alternative_layout(
+            ir, manifest, slide_position - 1, replacement_slide
+        )
     slides[slide_position - 1] = replacement_slide.model_copy(
-        update={"slide_index": slides[slide_position - 1].slide_index}
+        update={"slide_index": old_slide.slide_index, "layout_index": layout_index}
     )
     # A slide-level revision must not silently rewrite neighbouring slides.
     revised_ir = ir.model_copy(update={"slides": slides})

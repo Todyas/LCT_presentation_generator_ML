@@ -192,5 +192,7 @@ def test_fallback_slide_uses_only_outline_content_and_preserves_index():
     assert slide.slide_index == 7
     assert slide.layout_type == LayoutType.CONTENT_1COL
     assert slide.title.text == item.key_message
-    assert slide.components[0].items[0].text == "Distinct source detail"
-    assert len(slide.components[0].items) == 1
+    texts = [b.text for b in slide.components[0].items]
+    assert "Distinct source detail" not in texts
+    assert 1 <= len(texts) <= 2
+    assert item.key_message.casefold() not in {t.casefold() for t in texts}

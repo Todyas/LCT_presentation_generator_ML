@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import colorsys
+import io
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 
 from pptx.chart.data import CategoryChartData
 from pptx.dml.color import RGBColor
@@ -16,7 +19,11 @@ from pptx.table import Table
 from pptx.text.text import TextFrame
 from pptx.util import Emu, Pt
 
-from app.core.builder.autofit import apply_autofit_to_text_frame, autofit_font_size
+from app.core.builder.autofit import (
+    apply_autofit_to_text_frame,
+    autofit_font_size,
+    required_height_emu,
+)
 from app.models.presentation_ir import (
     BulletBlock,
     ChartData,
@@ -29,6 +36,9 @@ from app.models.presentation_ir import (
 from app.models.template_manifest import Geometry, ThemeColors
 
 _METRIC_VALUE_MAX_PT = 28
+_METRIC_CARD_MIN_HEIGHT_EMU = 600_000
+_BODY_MIN_PT = 14
+_TITLE_MIN_PT = 24
 _METRIC_LABEL_MAX_PT = 14
 _METRIC_TEXT_MARGIN_PT = (
     4  # tight inner margin so long values like "2,4 млрд ₽" keep their width
@@ -58,8 +68,16 @@ def _surface_palette(
 ) -> tuple[str, str, str]:
     background = _background_hex(slide, theme, width, height)
     if _is_dark(background):
-        return theme.dk2, theme.lt1, theme.accent5
-    return theme.lt1, theme.dk1, theme.accent1
+        surface = _mix_hex(background, "FFFFFF", 0.14)
+        return surface, _contrasting_text_hex(surface, theme), theme.accent1
+    surface = theme.lt1
+    if _color_distance(surface, background) < 14:
+        surface = (
+            theme.lt2
+            if _color_distance(theme.lt2, background) >= 14
+            else _mix_hex(background, theme.dk1, 0.06)
+        )
+    return surface, _contrasting_text_hex(surface, theme), theme.accent1
 
 
 def _style_text_frame(
@@ -125,10 +143,98 @@ def _color_hex(color, theme: ThemeColors) -> str | None:
     return getattr(theme, theme_key) if theme_key is not None else None
 
 
-def _fill_hex(fill, theme: ThemeColors) -> str | None:
-    if fill.type == MSO_FILL_TYPE.SOLID:
+_A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+_P_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
+_R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+_THEME_KEYS = frozenset(
+    ("dk1", "dk2", "lt1", "lt2") + tuple(f"accent{index}" for index in range(1, 7))
+)
+_DEFAULT_CLR_MAP = {"bg1": "lt1", "tx1": "dk1", "bg2": "lt2", "tx2": "dk2"}
+
+
+def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    return tuple(int(hex_color[index : index + 2], 16) for index in (0, 2, 4))  # type: ignore[return-value]
+
+
+def _rgb_to_hex(red: float, green: float, blue: float) -> str:
+    return "{:02X}{:02X}{:02X}".format(
+        *(max(0, min(255, round(value))) for value in (red, green, blue))
+    )
+
+
+def _mix_hex(base: str, other: str, ratio: float) -> str:
+    base_rgb, other_rgb = _hex_to_rgb(base), _hex_to_rgb(other)
+    return _rgb_to_hex(
+        *(b + (o - b) * ratio for b, o in zip(base_rgb, other_rgb, strict=True))
+    )
+
+
+def _color_distance(first: str, second: str) -> float:
+    return max(
+        abs(a - b) for a, b in zip(_hex_to_rgb(first), _hex_to_rgb(second), strict=True)
+    )
+
+
+def _relative_luminance(hex_color: str) -> float:
+    channels = []
+    for value in _hex_to_rgb(hex_color):
+        srgb = value / 255
+        channels.append(
+            srgb / 12.92 if srgb <= 0.03928 else ((srgb + 0.055) / 1.055) ** 2.4
+        )
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+
+
+def _contrast_ratio(first: str, second: str) -> float:
+    lum_a, lum_b = _relative_luminance(first), _relative_luminance(second)
+    lighter, darker = max(lum_a, lum_b), min(lum_a, lum_b)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def _average_hex(colors: list[str]) -> str | None:
+    if not colors:
+        return None
+    rgbs = [_hex_to_rgb(color) for color in colors]
+    return _rgb_to_hex(
+        *(sum(channel) / len(rgbs) for channel in zip(*rgbs, strict=True))
+    )
+
+
+@lru_cache(maxsize=256)
+def _image_mean_hex(partname: str, blob: bytes) -> str | None:
+    try:
+        from PIL import Image, ImageStat
+
+        with Image.open(io.BytesIO(blob)) as image:
+            image = image.convert("RGB")
+            image.thumbnail((64, 64))
+            red, green, blue = ImageStat.Stat(image).mean[:3]
+    except (OSError, ValueError, SyntaxError):
+        return None
+    return _rgb_to_hex(red, green, blue)
+
+
+def _blip_mean_hexes(element, part) -> list[str]:
+    colors = []
+    for blip in element.iter(f"{{{_A_NS}}}blip"):
+        rel_id = blip.get(f"{{{_R_NS}}}embed")
+        if not rel_id:
+            continue
+        try:
+            image_part = part.related_part(rel_id)
+            mean = _image_mean_hex(str(image_part.partname), image_part.blob)
+        except (KeyError, AttributeError, ValueError):
+            continue
+        if mean is not None:
+            colors.append(mean)
+    return colors
+
+
+def _fill_hex(fill, theme: ThemeColors, part=None) -> str | None:
+    fill_type = fill.type
+    if fill_type == MSO_FILL_TYPE.SOLID:
         return _color_hex(fill.fore_color, theme)
-    if fill.type == MSO_FILL_TYPE.GRADIENT:
+    if fill_type == MSO_FILL_TYPE.GRADIENT:
         colors = [
             value
             for stop in fill.gradient_stops
@@ -136,6 +242,135 @@ def _fill_hex(fill, theme: ThemeColors) -> str | None:
         ]
         if colors:
             return colors[0]
+    if fill_type == MSO_FILL_TYPE.PICTURE and part is not None:
+        xpr = getattr(fill, "_xPr", None)
+        if xpr is not None:
+            return _average_hex(_blip_mean_hexes(xpr, part))
+    return None
+
+
+def _clr_map(master) -> dict[str, str]:
+    mapping = dict(_DEFAULT_CLR_MAP)
+    try:
+        element = master._element.find(f"{{{_P_NS}}}clrMap")
+    except AttributeError:
+        return mapping
+    if element is not None:
+        for key in _DEFAULT_CLR_MAP:
+            value = element.get(key)
+            if value in _THEME_KEYS:
+                mapping[key] = value
+    return mapping
+
+
+def _color_element_hex(
+    element, theme: ThemeColors, clr_map: dict[str, str]
+) -> str | None:
+    tag = element.tag.rsplit("}", 1)[-1]
+    if tag == "srgbClr":
+        base = (element.get("val") or "").upper()
+        if len(base) != 6:
+            return None
+    elif tag == "schemeClr":
+        value = element.get("val") or ""
+        key = clr_map.get(value, value)
+        base = getattr(theme, key, None) if key in _THEME_KEYS else None
+        if base is None:
+            return None
+    else:
+        return None
+    lum_mod = lum_off = None
+    for child in element:
+        name = child.tag.rsplit("}", 1)[-1]
+        try:
+            if name == "lumMod":
+                lum_mod = int(child.get("val")) / 100_000
+            elif name == "lumOff":
+                lum_off = int(child.get("val")) / 100_000
+        except (TypeError, ValueError):
+            continue
+    if lum_mod is None and lum_off is None:
+        return base
+    red, green, blue = (value / 255 for value in _hex_to_rgb(base))
+    hue, lightness, saturation = colorsys.rgb_to_hls(red, green, blue)
+    lightness = max(0.0, min(1.0, lightness * (lum_mod or 1.0) + (lum_off or 0.0)))
+    return _rgb_to_hex(
+        *(v * 255 for v in colorsys.hls_to_rgb(hue, lightness, saturation))
+    )
+
+
+def _bg_fill_element_hex(
+    fill_element, part, theme: ThemeColors, clr_map: dict[str, str]
+) -> str | None:
+    tag = fill_element.tag.rsplit("}", 1)[-1]
+    if tag == "solidFill":
+        for child in fill_element:
+            return _color_element_hex(child, theme, clr_map)
+    elif tag == "gradFill":
+        for stop in fill_element.iter(f"{{{_A_NS}}}gs"):
+            for child in stop:
+                color = _color_element_hex(child, theme, clr_map)
+                if color is not None:
+                    return color
+    elif tag == "blipFill":
+        return _average_hex(_blip_mean_hexes(fill_element, part))
+    return None
+
+
+def _owner_background_hex(
+    owner, theme: ThemeColors, clr_map: dict[str, str]
+) -> str | None:
+    """Explicit background of a slide/layout/master, read without mutating it.
+
+    python-pptx's ``.background.fill`` silently rewrites a missing or ``p:bgRef``
+    background into ``noFill``, which would destroy the template's real look.
+    """
+    background = owner._element.find(f"{{{_P_NS}}}cSld/{{{_P_NS}}}bg")
+    if background is None:
+        return None
+    properties = background.find(f"{{{_P_NS}}}bgPr")
+    if properties is not None:
+        for child in properties:
+            color = _bg_fill_element_hex(child, owner.part, theme, clr_map)
+            if color is not None:
+                return color
+        return None
+    reference = background.find(f"{{{_P_NS}}}bgRef")
+    if reference is not None:
+        for child in reference:
+            color = _color_element_hex(child, theme, clr_map)
+            if color is not None:
+                return color
+    return None
+
+
+def _covering_shape_hex(
+    owner, theme: ThemeColors, slide_width_emu: int, slide_height_emu: int
+) -> str | None:
+    full_area = slide_width_emu * slide_height_emu
+    candidates = []
+    for shape in owner.shapes:
+        try:
+            width, height = shape.width, shape.height
+        except (AttributeError, ValueError):
+            continue
+        if not width or not height or shape.is_placeholder:
+            continue
+        if (
+            width * height >= full_area * 0.5
+            and width >= slide_width_emu * 0.7
+            and height >= slide_height_emu * 0.7
+        ):
+            candidates.append((width * height, shape))
+    for _, shape in sorted(candidates, key=lambda item: item[0], reverse=True):
+        color = _average_hex(_blip_mean_hexes(shape._element, owner.part))
+        if color is None and hasattr(shape, "fill"):
+            try:
+                color = _fill_hex(shape.fill, theme, owner.part)
+            except (AttributeError, TypeError, ValueError):
+                color = None
+        if color is not None:
+            return color
     return None
 
 
@@ -145,37 +380,44 @@ def _background_hex(
     slide_width_emu: int,
     slide_height_emu: int,
 ) -> str:
-    for owner in (slide, slide.slide_layout, slide.slide_layout.slide_master):
-        color = _fill_hex(owner.background.fill, theme)
+    layout = slide.slide_layout
+    master = layout.slide_master
+    clr_map = _clr_map(master)
+    color = _owner_background_hex(slide, theme, clr_map)
+    if color is not None:
+        return color
+    for owner in (layout, master):
+        color = _covering_shape_hex(
+            owner, theme, slide_width_emu, slide_height_emu
+        ) or _owner_background_hex(owner, theme, clr_map)
         if color is not None:
             return color
-
-        full_area = slide_width_emu * slide_height_emu
-        covering_shapes = sorted(
-            (
-                shape
-                for shape in owner.shapes
-                if shape.width * shape.height >= full_area * 0.55
-                and shape.left <= slide_width_emu * 0.1
-                and shape.top <= slide_height_emu * 0.1
-                and hasattr(shape, "fill")
-            ),
-            key=lambda shape: shape.width * shape.height,
-            reverse=True,
-        )
-        for shape in covering_shapes:
-            color = _fill_hex(shape.fill, theme)
-            if color is not None:
-                return color
     return theme.lt1
 
 
 def _contrasting_text_hex(background_hex: str, theme: ThemeColors) -> str:
-    red, green, blue = (
-        int(background_hex[index : index + 2], 16) / 255 for index in (0, 2, 4)
-    )
-    luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue
-    return theme.lt1 if luminance < 0.48 else theme.dk1
+    best = max((theme.lt1, theme.dk1), key=lambda c: _contrast_ratio(c, background_hex))
+    if _contrast_ratio(best, background_hex) >= 4.5:
+        return best
+    return "FFFFFF" if _relative_luminance(background_hex) < 0.18 else "000000"
+
+
+def ensure_readable_text(
+    slide: Slide, theme: ThemeColors, width: int, height: int
+) -> None:
+    """Give runs with no explicit colour one that contrasts with what is behind them."""
+    slide_background = _background_hex(slide, theme, width, height)
+    for shape in slide.shapes:
+        if not shape.has_text_frame or not shape.text_frame.text.strip():
+            continue
+        background = None
+        if hasattr(shape, "fill"):
+            background = _fill_hex(shape.fill, theme)
+        color = _contrasting_text_hex(background or slide_background, theme)
+        for paragraph in shape.text_frame.paragraphs:
+            for run in paragraph.runs:
+                if run.font.color.type is None:
+                    run.font.color.rgb = _rgb(color)
 
 
 _BOLD_MARKDOWN = re.compile(r"\*\*(.+?)\*\*")
@@ -233,7 +475,8 @@ def render_title_component(
         shape.text_frame,
         geometry,
         font_path,
-        max_size_pt=max_size_pt,
+        min_size_pt=_TITLE_MIN_PT,
+        max_size_pt=max(int(max_size_pt), _TITLE_MIN_PT),
         line_spacing=1.15,
     )
     fallback_color = (
@@ -265,6 +508,7 @@ def render_bullet_component(
     max_size_pt: float = 24,
 ) -> BBox:
     generated_textbox = placeholder_shape is None
+    target_shape = placeholder_shape
     if placeholder_shape is not None:
         text_frame = placeholder_shape.text_frame
         bbox = BBox(
@@ -280,6 +524,7 @@ def render_bullet_component(
             Emu(geometry.width_emu),
             Emu(geometry.height_emu),
         )
+        target_shape = textbox
         text_frame = textbox.text_frame
         bbox = BBox(
             geometry.left_emu, geometry.top_emu, geometry.width_emu, geometry.height_emu
@@ -293,7 +538,12 @@ def render_bullet_component(
         text_frame.margin_bottom = Pt(6)
     text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
     apply_autofit_to_text_frame(
-        text_frame, geometry, font_path, max_size_pt=max_size_pt, line_spacing=1.2
+        text_frame,
+        geometry,
+        font_path,
+        min_size_pt=_BODY_MIN_PT,
+        max_size_pt=max(int(max_size_pt), _BODY_MIN_PT),
+        line_spacing=1.2,
     )
     fallback_color = (
         _contrasting_text_hex(
@@ -314,7 +564,54 @@ def render_bullet_component(
                 run.font.color.rgb = _rgb(fallback_color)
             if index == 0 and not paragraph_has_bold:
                 run.font.bold = True
-    return bbox
+    return _grow_to_fit_text(
+        target_shape, text_frame, geometry, bbox, font_path, slide_height_emu
+    )
+
+
+def _grow_to_fit_text(
+    shape: BaseShape,
+    text_frame,
+    geometry: Geometry,
+    bbox: BBox,
+    font_path: str,
+    slide_height_emu: int,
+) -> BBox:
+    # at the font-size floor the text may still overflow: let the box grow downward
+    # (never past the bottom safe margin) instead of shrinking the font further
+    paragraphs = [p.text for p in text_frame.paragraphs]
+    size = next(
+        (
+            int(run.font.size.pt)
+            for p in text_frame.paragraphs
+            for run in p.runs
+            if run.font.size is not None
+        ),
+        _BODY_MIN_PT,
+    )
+    if size > _BODY_MIN_PT:
+        return bbox
+    inset = int(Pt(12))
+    needed = (
+        required_height_emu(
+            paragraphs,
+            max(bbox.w - 2 * inset, 1),
+            font_path,
+            size,
+            line_spacing=1.2,
+        )
+        + len(paragraphs) * int(Pt(14))
+        + 2 * inset
+    )
+    limit = int(slide_height_emu * 0.92) - bbox.y
+    new_height = min(needed, limit)
+    if new_height <= bbox.h:
+        return bbox
+    shape.left = Emu(bbox.x)
+    shape.top = Emu(bbox.y)
+    shape.width = Emu(bbox.w)
+    shape.height = Emu(new_height)
+    return BBox(bbox.x, bbox.y, bbox.w, new_height)
 
 
 def render_metric_card(
@@ -375,7 +672,12 @@ def render_metric_card(
     label = card.label if not card.delta else f"{card.label} · {card.delta}"
     label_box.text_frame.text = label
     label_size = autofit_font_size(
-        [label], usable_width, label_height, font_path, max_size_pt=_METRIC_LABEL_MAX_PT
+        [label],
+        usable_width,
+        label_height,
+        font_path,
+        min_size_pt=12,
+        max_size_pt=_METRIC_LABEL_MAX_PT,
     )
     label_box.text_frame.paragraphs[0].runs[0].font.size = Pt(label_size)
     label_box.text_frame.paragraphs[0].runs[0].font.color.rgb = _rgb(theme.dk1)
@@ -394,9 +696,33 @@ def render_metric_card_group(
     theme: ThemeColors,
     font_path: str,
     font_name: str | None = None,
+    slide_width_emu: int | None = None,
 ) -> list[BBox]:
     n = len(cards)
     card_width = (geometry.width_emu - _METRIC_CARD_GAP_EMU * (n - 1)) // n
+    if slide_width_emu is not None and card_width < slide_width_emu * 0.18 and n > 1:
+        # too narrow side by side: stack the cards in a column instead
+        gap = _METRIC_CARD_GAP_EMU // 2
+        card_height = max(
+            (geometry.height_emu - gap * (n - 1)) // n, _METRIC_CARD_MIN_HEIGHT_EMU
+        )
+        card_height = min(card_height, _METRIC_CARD_MAX_HEIGHT_EMU)
+        return [
+            render_metric_card(
+                slide,
+                Geometry(
+                    left_emu=geometry.left_emu,
+                    top_emu=geometry.top_emu + i * (card_height + gap),
+                    width_emu=geometry.width_emu,
+                    height_emu=card_height,
+                ),
+                card,
+                theme,
+                font_path,
+                font_name,
+            )
+            for i, card in enumerate(cards)
+        ]
     card_height = min(geometry.height_emu, _METRIC_CARD_MAX_HEIGHT_EMU)
 
     boxes: list[BBox] = []
@@ -450,7 +776,7 @@ def fill_table_cells(
                 paragraph.space_after = Pt(2)
                 for run in paragraph.runs:
                     run.font.color.rgb = _rgb(theme.dk1)
-                    run.font.size = Pt(12)
+                    run.font.size = Pt(14 if len(table.rows) < 6 else 12)
                     run.font.bold = c == 0
                     if font_name:
                         run.font.name = font_name
@@ -627,9 +953,7 @@ def render_comparison(
         (comparison.left_title, comparison.left_items, theme.accent2),
         (comparison.right_title, comparison.right_items, accent),
     )
-    body_size = (
-        14 if len(comparison.left_items) + len(comparison.right_items) <= 6 else 12
-    )
+    body_size = _BODY_MIN_PT
     for index, (heading, items, side_color) in enumerate(sides):
         left = geometry.left_emu + index * (width + gap)
         card = slide.shapes.add_shape(
@@ -653,7 +977,14 @@ def render_comparison(
         band.fill.solid()
         band.fill.fore_color.rgb = _rgb(side_color)
         band.line.fill.background()
-        _style_text_frame(band.text_frame, heading, theme.lt1, font_name, 18, bold=True)
+        _style_text_frame(
+            band.text_frame,
+            heading,
+            _contrasting_text_hex(side_color, theme),
+            font_name,
+            18,
+            bold=True,
+        )
         band.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
         band.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
         body = slide.shapes.add_textbox(
@@ -679,6 +1010,7 @@ def render_comparison(
                     height_emu=geometry.height_emu - band_height - 140_000,
                 ),
                 font_path,
+                min_size_pt=_BODY_MIN_PT,
                 max_size_pt=body_size,
                 line_spacing=1.08,
             )
@@ -701,9 +1033,12 @@ def render_process(
         slide, theme, slide_width_emu, slide_height_emu
     )
     count = len(process.steps)
-    columns = count if count <= 4 else 3
-    rows = (count + columns - 1) // columns
     gap_x, gap_y = 150_000, 130_000
+    per_row_cap = 4 if geometry.width_emu < slide_width_emu * 0.6 else 6
+    fit_cap = max(1, (geometry.width_emu + gap_x) // int(slide_width_emu * 0.18 + gap_x))
+    per_row_cap = max(1, min(per_row_cap, fit_cap))
+    rows = max(1, -(-count // per_row_cap))
+    columns = max(1, -(-count // rows))
     step_width = (geometry.width_emu - gap_x * (columns - 1)) // columns
     step_height = (geometry.height_emu - gap_y * (rows - 1)) // rows
     for index, step in enumerate(process.steps):
@@ -768,7 +1103,7 @@ def render_process(
             step.description or step.title,
             text_color,
             font_name,
-            11,
+            _BODY_MIN_PT,
         )
         if font_path:
             apply_autofit_to_text_frame(
@@ -780,7 +1115,8 @@ def render_process(
                     height_emu=badge_size,
                 ),
                 font_path,
-                max_size_pt=15,
+                min_size_pt=_BODY_MIN_PT,
+                max_size_pt=16,
                 line_spacing=1.0,
             )
             apply_autofit_to_text_frame(
@@ -792,7 +1128,8 @@ def render_process(
                     height_emu=max(100_000, step_height - badge_size - 280_000),
                 ),
                 font_path,
-                max_size_pt=12,
+                min_size_pt=12,
+                max_size_pt=_BODY_MIN_PT,
                 line_spacing=1.05,
             )
     return BBox(
@@ -813,9 +1150,13 @@ def render_icon_list(
     surface, text_color, accent = _surface_palette(
         slide, theme, slide_width_emu, slide_height_emu
     )
-    columns = min(len(icon_list.items), 2)
-    rows = (len(icon_list.items) + columns - 1) // columns
     gap = 120_000
+    columns = min(len(icon_list.items), 2 if len(icon_list.items) <= 4 else 3)
+    while columns > 1 and (
+        (geometry.width_emu - gap * (columns - 1)) // columns < slide_width_emu * 0.2
+    ):
+        columns -= 1
+    rows = (len(icon_list.items) + columns - 1) // columns
     cell_width = (geometry.width_emu - gap * (columns - 1)) // columns
     cell_height = (geometry.height_emu - gap * (rows - 1)) // rows
     icon_size = min(390_000, cell_height - 150_000)
@@ -870,7 +1211,7 @@ def render_icon_list(
             item.title if not item.description else f"{item.title}\n{item.description}",
             text_color,
             font_name,
-            14 if len(icon_list.items) <= 4 else 12,
+            _BODY_MIN_PT,
         )
         text_box.text_frame.paragraphs[0].runs[0].font.bold = True
         text_box.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
@@ -884,7 +1225,8 @@ def render_icon_list(
                     height_emu=cell_height - 120_000,
                 ),
                 font_path,
-                max_size_pt=14,
+                min_size_pt=12,
+                max_size_pt=_BODY_MIN_PT,
                 line_spacing=1.05,
             )
     return BBox(

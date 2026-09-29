@@ -43,6 +43,9 @@ def autofit_font_size(
 
     def fits(size_pt: int) -> bool:
         font = ImageFont.truetype(font_path, int(size_pt * dpi / 72))
+        # a single word wider than the box would be broken mid-word by the renderer
+        if any(font.getlength(w) > box_width_px for p in paragraphs for w in p.split()):
+            return False
         total_lines = sum(_wrap_line_count(p, font, box_width_px) for p in paragraphs)
         line_height_px = font.size * line_spacing
         return total_lines * line_height_px <= box_height_px
@@ -59,6 +62,21 @@ def autofit_font_size(
         else:
             hi = mid - 1
     return best
+
+
+def required_height_emu(
+    paragraphs: list[str],
+    box_width_emu: int,
+    font_path: str,
+    size_pt: int,
+    line_spacing: float = 1.2,
+    dpi: int = 96,
+) -> int:
+    """Height needed to render the paragraphs at exactly size_pt in a box of this width."""
+    box_width_px = box_width_emu / EMU_PER_INCH * dpi
+    font = ImageFont.truetype(font_path, int(size_pt * dpi / 72))
+    total_lines = sum(_wrap_line_count(p, font, box_width_px) for p in paragraphs)
+    return int(total_lines * font.size * line_spacing / dpi * EMU_PER_INCH)
 
 
 def apply_autofit_to_text_frame(
