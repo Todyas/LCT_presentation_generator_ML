@@ -116,6 +116,26 @@ export function ResultPage() {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
+  function selectVariant(id: string) {
+    const keepPosition = slide?.position;
+    const nextCurrent = job?.variants.find((item) => item.variant === id);
+    const nextDeck = decks.find((item) => item.id === id);
+    const targetSlides = slidesForVariant(nextDeck, nextCurrent?.preview_count ?? 0);
+    setVariant(id);
+    if (!targetSlides.length) {
+      setIndex(0);
+      return;
+    }
+    if (keepPosition != null) {
+      const nextIndex = targetSlides.findIndex((item) => item.position === keepPosition);
+      if (nextIndex >= 0) {
+        setIndex(nextIndex);
+        return;
+      }
+    }
+    setIndex(Math.min(safeIndex, targetSlides.length - 1));
+  }
+
   function remember(nextStage: string, nextProgress: number) {
     if (nextStage) {
       setStage(nextStage);
@@ -268,10 +288,7 @@ export function ResultPage() {
                     role="radio"
                     aria-checked={variant === id}
                     className={variant === id ? "is-on" : ""}
-                    onClick={() => {
-                      setVariant(id);
-                      setIndex(0);
-                    }}
+                    onClick={() => selectVariant(id)}
                   >
                     <b>{variantLabel(id)}</b>
                     <small>{variantAudience(id)}</small>
