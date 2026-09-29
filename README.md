@@ -5,6 +5,16 @@ PPTX-шаблону. Сервис создаёт три варианта пре�
 audit issues, позволяет перегенерировать отдельный слайд и экспортирует
 PPTX/PDF/HTML.
 
+## Документация
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) — пайплайн и границы слоёв;
+- [MODELS.md](MODELS.md) — используемая LLM, лицензия, назначение и требования
+  к inference;
+- [AUDIT.md](AUDIT.md) — архитектура аудита, матрица проверок и покрытие
+  тестами;
+- [HACKATHON_BACKEND_PLAN.md](HACKATHON_BACKEND_PLAN.md) — целевой план и
+  исторические решения; отдельные пункты могут опережать текущую реализацию.
+
 ## Локальный запуск
 
 ```bash
@@ -55,6 +65,13 @@ echo "$GHCR_TOKEN" | docker login ghcr.io -u GITHUB_USER --password-stdin
 - `LLM_MODEL` — имя модели;
 - `LLM_API_KEY` — ключ или `EMPTY` для локального vLLM;
 - `LLM_MAX_CONCURRENCY` — предел одновременных запросов.
+
+Референсная модель — `Qwen/Qwen2.5-32B-Instruct`; в конфигурации endpoint
+по умолчанию используется alias `Qwen2.5-32B-Instruct`. Модель имеет открытые
+веса и лицензию Apache-2.0. Она не входит в Docker-образ приложения: backend
+обращается к внешнему OpenAI-compatible endpoint. Допустимые модели,
+проверка лицензионных ограничений и требования к самостоятельному inference
+описаны в [MODELS.md](MODELS.md).
 
 ## Контракт фронтенда
 
@@ -170,3 +187,5 @@ endpoint'ами, а его `output.parent_job_id` указывает на исх
 - HTML viewer использует embedded PNG previews. PPTX при этом состоит из
   нативных редактируемых объектов.
 - Semantic audit работает по IR; VLM-аудит фактического PNG пока не подключён.
+- Полная матрица реализованных, частичных и отсутствующих проверок приведена в
+  [AUDIT.md](AUDIT.md).
